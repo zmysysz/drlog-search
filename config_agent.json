@@ -1,0 +1,28 @@
+{
+  "server": {
+    "address": "0.0.0.0",
+    "port": 8113,
+    "threads": 3,
+    "scan_interval": 30,
+    "logpath": "logs/",
+    "loglevel": "debug",
+    "cache_path": "data/",
+    "mode": "agent",
+    "registry_address": ["127.0.0.1:8111"],
+    "registry_agent_address": "",
+    "agent_interface_names": "lo",
+    "agent_ip_patterns": ""
+  },
+  "paths": [
+    {
+      "path": "/var/log/nginx",
+      "namepattern": ".*\\.1log$|.*\\.1gz$",
+      "maxdays": 30
+    },
+    {
+      "path": "/work/data/test_raw_log",
+      "namepattern": ".*\\.log$|.*\\.gz$",
+      "maxdays": 30
+    }
+  ]
+}
