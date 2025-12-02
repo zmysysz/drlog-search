@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRLog Search - Log Query Tool</title>
+    <style>
+        /* CSS Styles */
+        :root {
+            /* Defines the initial width of the history sidebar */
+            --sidebar-width: 200px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f7f9;
+            color: #333;
+        }
+
+        header {
+            background-color: #4a90e2;
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.5em;
+            border-bottom: 3px solid #357ABD;
+        }
+
+        .container {
+            display: flex;
+            padding: 20px;
+            margin: 0 auto;
+            /* Ensure container height fits the viewport */
+            min-height: calc(100vh - 80px); 
+        }
+
+        /* ------------------ Left Sidebar: History (Resizable Width) ------------------ */
+        .sidebar {
+            width: var(--sidebar-width); /* Uses CSS variable */
+            flex-shrink: 0;
+            margin-right: 0; 
+            background-color: white;
+            padding: 15px;
+            padding-right: 0; 
+            border-radius: 8px 0 0 8px; 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            height: fit-content;
+            min-height: 100%; 
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .sidebar-content {
+            padding-right: 15px; /* Restores right padding for content area */
+            height: 100%;
+        }
+
+        .sidebar h3 {
+            margin-top: 0;
+            color: #4a90e2;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        #history-list {
+            list-style: none;
+            padding: 0;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #history-list li {
+            padding: 8px 0;
+            border-bottom: 1px dashed #eee;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.2s;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        /* Resizer handle style */
+        #resizer {
+            width: 8px;
+            height: 100%;
+            background-color: #e0e0e0;
+            cursor: col-resize;
+            position: absolute;
+            right: 0;
+            top: 0;
+            z-index: 10;
+        }
+        
+        #resizer:hover {
+            background-color: #4a90e2;
+        }
+
+        /* ------------------ Right Main Content (Flexible Width) ------------------ */
+        .main-content {
+            flex-grow: 1;
+            /* Space for the resizer and sidebar */
+            margin-left: 12px; 
+        }
+
+        /* Query Configuration */
+        .query-config {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .time-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .form-group label {
+            width: 80px;
+            font-weight: bold;
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+
+        .form-group input, .form-group select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        #start_time, #end_time, #max_results {
+            width: 200px;
+            flex-shrink: 0;
+        }
+
+        #querys-container {
+            border: 1px dashed #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .query-item {
+            display: flex;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .query-item select {
+            width: 100px;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        .query-item input[type="text"] {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+
+        /* Right-aligned button container */
+        .button-row {
+            text-align: right;
+            margin-top: 20px;
+        }
+
+        #search-btn {
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            transition: background-color 0.2s;
+        }
+
+        #search-btn:disabled {
+            background-color: #9cbce8;
+            cursor: not-allowed;
+        }
+
+        /* Result Display Panel */
+        .result-panel {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-panel h3 {
+            margin-top: 0;
+            color: #4a90e2;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        #result-display {
+            min-height: 200px;
+            max-height: 800px; 
+            overflow: auto;
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        /* Collapse/Expand Styles */
+        .agent-record {
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid #3c4049;
+            border-radius: 4px;
+        }
+
+        .log-header {
+            color: #61afef;
+            font-weight: bold;
+            padding: 5px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            user-select: none;
+        }
+        
+        .log-header:hover {
+            background-color: #353940;
+        }
+
+        .toggle-icon {
+            font-size: 1.2em;
+            margin-right: 10px;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        
+        .toggle-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .log-content {
+            padding: 5px 0 0 25px;
+            overflow: hidden;
+            max-height: 10000px;
+            transition: max-height 0.3s ease-in-out;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .agent-record.collapsed .log-content {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+
+        .log-error {
+            color: #e06c75;
+            font-weight: bold;
+        }
+
+        .total-stats {
+            color: #98c379;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        /* Notification and Loading Overlay Styles */
+        #message-box {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: none;
+        }
+
+        .error {
+            background-color: #fff1f0;
+            color: #cf1322;
+            border: 1px solid #ffa39e;
+        }
+
+        .success {
+            background-color: #f6ffed;
+            color: #389e0d;
+            border: 1px solid #b7eb8f;
+        }
+
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4a90e2;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <p style="margin-left: 15px; color: #4a90e2; font-size: 1.2em;">Querying, please wait...</p>
+    </div>
+
+    <header>
+        DRLog Search
+        <span id="prefix-display" style="font-size: 0.7em; margin-left: 20px; opacity: 0.8;"></span>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-content">
+                <h3>Query History</h3>
+                <ul id="history-list">
+                    <li style="color: #999;">(Click history to load query conditions)</li>
+                </ul>
+            </div>
+            <div id="resizer"></div>
+        </div>
+
+        <div class="main-content">
+            <div class="query-config">
+                <form id="search-form">
+                    <div class="time-row">
+                        <div class="form-group">
+                            <label for="start_time">Start Time</label>
+                            <input type="datetime-local" id="start_time" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="end_time">End Time</label>
+                            <input type="datetime-local" id="end_time" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="max_results">Max Lines</label>
+                            <input type="number" id="max_results" value="500" min="1" max="1000" required>
+                        </div>
+                    </div>
+                    <div class="form-group" style="align-items: flex-start;">
+                        <label>Querys</label>
+                        <div style="flex-grow: 1;">
+                            <div id="querys-container"></div>
+                            <button type="button" id="add-query-btn">+ Add Query Condition</button>
+                        </div>
+                    </div>
+                    
+                    <div class="button-row">
+                        <div id="message-box"></div>
+                        <button type="submit" id="search-btn">🚀 Submit Query</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="result-panel">
+                <h3>Query Results</h3>
+                <div id="result-display">Click [Submit Query], results will be shown here.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const API_HOST = '';
+            const API_PATH = '/log/search';
+            const HISTORY_KEY_PREFIX = 'drlog_history_';
+
+            // DOM Elements
+            const root = document.documentElement;
+            const sidebar = document.querySelector('.sidebar');
+            const resizer = document.getElementById('resizer');
+            const form = document.getElementById('search-form');
+            const prefixDisplay = document.getElementById('prefix-display');
+            const querysContainer = document.getElementById('querys-container');
+            const searchBtn = document.getElementById('search-btn');
+            const resultDisplay = document.getElementById('result-display');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const historyList = document.getElementById('history-list');
+            const messageBox = document.getElementById('message-box');
+
+            let currentPrefix = '';
+
+            // --- Sidebar Resizer Logic ---
+            let isResizing = false;
+            const MIN_WIDTH = 150; // Minimum width limit
+            const MAX_WIDTH = 500; // Maximum width limit
+            const STORAGE_KEY = 'drlog_sidebar_width';
+
+            // 1. Initialize width from local storage
+            const savedWidth = localStorage.getItem(STORAGE_KEY);
+            if (savedWidth) {
+                root.style.setProperty('--sidebar-width', savedWidth + 'px');
+            }
+            
+            // 2. Mouse down event
+            resizer.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                // Prevent default text selection behavior
+                document.body.style.userSelect = 'none';
+                document.body.style.cursor = 'col-resize'; 
+            });
+
+            // 3. Mouse move event (Dragging)
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                // Calculate new width
+                const containerLeft = sidebar.getBoundingClientRect().left;
+                let newWidth = e.clientX - containerLeft;
+
+                // Restrict min/max width
+                if (newWidth < MIN_WIDTH) {
+                    newWidth = MIN_WIDTH;
+                } else if (newWidth > MAX_WIDTH) {
+                    newWidth = MAX_WIDTH;
+                }
+                
+                // Apply new width to CSS variable
+                root.style.setProperty('--sidebar-width', newWidth + 'px');
+            });
+
+            // 4. Mouse up event (Stop dragging)
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.userSelect = '';
+                    document.body.style.cursor = 'default';
+                    
+                    // Save current width to local storage
+                    const finalWidth = sidebar.offsetWidth;
+                    localStorage.setItem(STORAGE_KEY, finalWidth);
+                }
+            });
+
+            // --- Helper Functions ---
+
+            const getUrlParameter = (name) => {
+                name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+                const regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+                const results = regex.exec(location.search);
+                return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+            };
+
+            const initPrefix = () => {
+                const prefix = getUrlParameter('prefix');
+                if (prefix) {
+                    currentPrefix = prefix;
+                    prefixDisplay.textContent = `Current Project Log Prefix: ${prefix}`;
+                } else {
+                    currentPrefix = '/default/log/path';
+                    prefixDisplay.textContent = 'Warning: Missing prefix parameter in URL, using default path.';
+                    prefixDisplay.style.color = '#ff4d4f';
+                }
+            };
+            initPrefix();
+
+            const datetimeToUnixTimestamp = (datetimeLocalString) => {
+                if (!datetimeLocalString) return 0;
+                const date = new Date(datetimeLocalString);
+                return Math.floor(date.getTime() / 1000);
+            };
+
+            const toLocalDatetime = (timestamp) => {
+                const date = new Date(timestamp * 1000);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            };
+
+            const createQueryItem = (query = '', type = 'simple') => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'query-item';
+                itemDiv.innerHTML = `
+                    <select class="query-type">
+                        <option value="simple">simple</option>
+                        <option value="boolean">boolean</option>
+                        <option value="regex">regex</option>
+                    </select>
+                    <input type="text" class="query-content" placeholder="Enter query content" value="${query.replace(/"/g, '&quot;')}" required>
+                    <button type="button" class="remove-query-btn">Delete</button>
+                `;
+                itemDiv.querySelector('.query-type').value = type;
+                itemDiv.querySelector('.remove-query-btn').addEventListener('click', () => {
+                    itemDiv.remove();
+                    if (querysContainer.children.length === 0) {
+                        createQueryItem('xxx content', 'simple');
+                    }
+                });
+                querysContainer.appendChild(itemDiv);
+            };
+
+            // Initialize default query items
+            if (querysContainer.children.length === 0) {
+                createQueryItem('xxx content', 'simple');
+                createQueryItem('llEventLoop-7-4 OR xecutorLoop-5-2', 'boolean');
+            }
+            document.getElementById('add-query-btn').addEventListener('click', () => createQueryItem());
+
+            // --- History Functions ---
+
+            const loadQueryFromHistory = (item) => {
+                document.getElementById('start_time').value = toLocalDatetime(item.start_time);
+                document.getElementById('end_time').value = toLocalDatetime(item.end_time);
+                document.getElementById('max_results').value = item.max_results;
+                
+                querysContainer.innerHTML = '';
+                item.querys.forEach(q => createQueryItem(q.query, q.type));
+                
+                showMessage('Historical query conditions loaded', 'success');
+            };
+
+            const loadHistory = () => {
+                const key = HISTORY_KEY_PREFIX + currentPrefix;
+                const history = JSON.parse(localStorage.getItem(key) || '[]');
+                historyList.innerHTML = '';
+
+                if (history.length === 0) {
+                    historyList.innerHTML = '<li style="color: #999;">No history records available</li>';
+                    return;
+                }
+
+                history.forEach((item, index) => {
+                    const li = document.createElement('li');
+                    const displayQuery = item.querys.length > 0 ? item.querys.map(q => q.query).join(' | ') : 'No query content';
+                    li.textContent = `[${index + 1}] ${displayQuery}`;
+                    li.title = `Time: ${toLocalDatetime(item.start_time)} - ${toLocalDatetime(item.end_time)}\nConditions: ${displayQuery}`;
+                    
+                    li.addEventListener('click', () => loadQueryFromHistory(item));
+                    historyList.appendChild(li);
+                });
+            };
+
+            const saveHistory = (data) => {
+                const key = HISTORY_KEY_PREFIX + currentPrefix;
+                const history = JSON.parse(localStorage.getItem(key) || '[]');
+                
+                const dataToSave = {
+                    querys: data.querys,
+                    start_time: data.start_time,
+                    end_time: data.end_time,
+                    max_results: data.max_results
+                };
+
+                const newHistory = [dataToSave, ...history.filter(item => JSON.stringify(item) !== JSON.stringify(dataToSave))];
+                // Keep only the latest 30 records
+                localStorage.setItem(key, JSON.stringify(newHistory.slice(0, 30)));
+                loadHistory(); 
+            };
+
+            loadHistory(); 
+
+            // --- UI/State Management Functions ---
+
+            const setFormDisabled = (disabled) => {
+                searchBtn.disabled = disabled;
+                Array.from(form.querySelectorAll('input, select, button:not(#search-btn)')).forEach(el => {
+                    el.disabled = disabled;
+                });
+                loadingOverlay.style.display = disabled ? 'flex' : 'none';
+            };
+
+            const showMessage = (text, type) => {
+                messageBox.textContent = text;
+                messageBox.className = '';
+                messageBox.classList.add(type);
+                messageBox.style.display = 'block';
+                setTimeout(() => {
+                    messageBox.style.display = 'none';
+                }, 5000);
+            };
+            
+            // --- Result Formatting and Collapse Logic ---
+
+            const formatLogResults = (result) => {
+                if (!result.records || result.records.length === 0) {
+                    return "No log records found.";
+                }
+
+                let totalLines = 0;
+                let outputHtml = '';
+
+                result.records.forEach(record => {
+                    const lines = record.lines || [];
+                    const lineCount = lines.length;
+                    
+                    const recordDiv = document.createElement('div');
+                    recordDiv.className = 'agent-record';
+                    
+                    let contentHtml = '';
+                    let headerText = '';
+                    let isError = false;
+                    
+                    // 1. Handle error/empty/non-normal status
+                    if (record.status !== 0 || (lineCount === 0 && record.error_msg)) {
+                        isError = true;
+                        const errorMsg = record.error_msg || 'Unknown Error';
+                        headerText = `<span class="log-error">agent:${record.agent || 'N/A'}, file:${record.path || 'N/A'}, lines:0</span>`;
+                        contentHtml += `<span class="log-error">msg: ${errorMsg}</span>`;
+                        
+                    } 
+                    // 2. Normal log output
+                    else if (lineCount > 0) {
+                        totalLines += lineCount;
+                        headerText = `agent:${record.agent}, file:${record.path}, lines:${lineCount}`;
+
+                        contentHtml += '<pre>';
+                        lines.forEach(lineItem => {
+                            contentHtml += lineItem.line + '\n';
+                        });
+                        contentHtml += '</pre>';
+                    } 
+                    // 3. No matches and no error
+                    else {
+                        headerText = `agent:${record.agent}, file:${record.path}, lines:0`;
+                        contentHtml += '<span style="color: #999;">No matching lines found.</span>';
+                    }
+
+                    // Build Agent container HTML
+                    recordDiv.innerHTML = `
+                        <div class="log-header" tabindex="0">
+                            <span class="toggle-icon">▼</span>
+                            ${isError ? headerText : `<span class="log-header-text">${headerText}</span>`}
+                        </div>
+                        <div class="log-content">${contentHtml}</div>
+                    `;
+                    
+                    outputHtml += recordDiv.outerHTML;
+                });
+
+                // Add total stats
+                const totalStats = `=== Query Summary: Aggregated ${result.records.length} servers, Total matched lines ${totalLines} ===`;
+                
+                return `<span class="total-stats">${totalStats}</span>` + outputHtml;
+            };
+
+            const setupToggleListeners = () => {
+                // Attach click listener to all log-headers
+                resultDisplay.querySelectorAll('.log-header').forEach(header => {
+                    header.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const recordDiv = header.closest('.agent-record');
+                        
+                        recordDiv.classList.toggle('collapsed');
+                        
+                        const icon = header.querySelector('.toggle-icon');
+                        icon.classList.toggle('collapsed');
+                    });
+                });
+            };
+
+            // --- Form Submission Logic ---
+            
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                setFormDisabled(true); 
+                resultDisplay.innerHTML = 'Building request and sending...';
+
+                // 1. Collect data 
+                const startTimeLocal = document.getElementById('start_time').value;
+                const endTimeLocal = document.getElementById('end_time').value;
+                const startTime = datetimeToUnixTimestamp(startTimeLocal);
+                const endTime = datetimeToUnixTimestamp(endTimeLocal);
+                const maxResults = parseInt(document.getElementById('max_results').value, 10);
+
+                const querys = Array.from(querysContainer.querySelectorAll('.query-item')).map(item => ({
+                    query: item.querySelector('.query-content').value,
+                    type: item.querySelector('.query-type').value
+                }));
+
+                const requestBody = {
+                    querys,
+                    start_time: startTime,
+                    end_time: endTime,
+                    max_results: maxResults
+                };
+
+                const requestUrl = `${API_HOST}${API_PATH}?prefix=${encodeURIComponent(currentPrefix)}`;
+
+                // 3. Send request
+                try {
+                    const response = await fetch(requestUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    const result = await response.json();
+
+                    // 4. Display and format results
+                    if (result.status === 0) {
+                        const formattedContent = formatLogResults(result);
+                        
+                        resultDisplay.innerHTML = formattedContent; 
+                        
+                        setupToggleListeners(); 
+                        
+                        let totalLines = 0;
+                        if (result.records) {
+                            result.records.forEach(r => totalLines += (r.lines ? r.lines.length : 0));
+                        }
+                        
+                        showMessage(`Query successful! Found ${totalLines} matching log lines.`, 'success');
+                        saveHistory(requestBody); 
+
+                    } else {
+                        // Business logic error
+                        resultDisplay.textContent = `Query failed, main error message:\n${result.error_msg || 'Unknown Error'}\n\nRaw response:\n${JSON.stringify(result, null, 2)}`;
+                        showMessage(`Query failed: ${result.error_msg}`, 'error');
+                    }
+                } catch (error) {
+                    // Network/Parsing error
+                    resultDisplay.textContent = `Network request failed or data parsing error: \n${error.message}\n\nPlease check API address and network connection.`;
+                    showMessage(`Network Error: ${error.message}`, 'error');
+                } finally {
+                    setFormDisabled(false); 
+                }
+            });
+        });
+    </script>
+</body>
+</html>
