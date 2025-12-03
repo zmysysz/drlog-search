@@ -18,8 +18,13 @@ namespace drlog {
     
     struct RootPath {
         std::string path;
+        std::string path_pattern;
+        std::string filename_pattern;
+        std::string time_format_pattern;
+        std::regex path_regex;
         std::regex filename_regex;
         std::regex time_format_regex;
+        int max_days{30};
     };
 
     struct TimeIndex {
@@ -53,7 +58,8 @@ namespace drlog {
         ~FileIndexer();
 
         // add a root path and filename regex
-        void add_root(const std::string& root_path, const std::string& filename_regex, const std::string& time_format_regex);
+        void add_root(const std::string& root_path, const std::string& filename_pattern, 
+            const std::string& time_format_pattern, const std::string& path_pattern);
         void init_indexes();
         // background scanner control
         void start();

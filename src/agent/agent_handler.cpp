@@ -43,6 +43,11 @@ namespace drlog {
             }
 
             auto results = indexer_->list_prefix(prefix);
+            if (results.empty()) {
+                res->result(http::status::not_found);
+                spdlog::warn("No files found under prefix: {}", prefix);      
+                co_return;
+            }
 
             // Build JSON array using nlohmann::json
             nlohmann::json j = nlohmann::json::array();

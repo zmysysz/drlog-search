@@ -44,24 +44,38 @@ namespace drlog {
     }
 
     // replace add_root implementation to accept time_format_regex
-    void FileIndexer::add_root(const std::string& root_path, const std::string& filename_regex, const std::string& time_format_regex) {
+    void FileIndexer::add_root(const std::string& root_path, const std::string& filename_pattern, 
+        const std::string& time_format_pattern, const std::string& path_pattern) {
         try {
-            std::regex r(filename_regex);
-            std::regex t;
-            if (!time_format_regex.empty()) {
-                try { t = std::regex(time_format_regex); }
+             RootPath rp;
+             rp.path = root_path;
+             if (!filename_pattern.empty()) {
+                rp.filename_pattern = filename_pattern;
+                try { rp.filename_regex = std::regex(filename_pattern); }
                 catch (const std::exception& e) {
-                    spdlog::warn("Bad time format regex '{}': {}", time_format_regex, e.what());
+                    spdlog::warn("Bad filename pattern '{}': {}", filename_pattern, e.what());
                 }
             }
-            std::unique_lock<std::shared_mutex> lock(roots_mutex_);
-            RootPath rp;
-            rp.path = root_path;
-            rp.filename_regex = std::move(r);
-            rp.time_format_regex = std::move(t);
-            roots_.push_back(std::move(rp));
+            if (!time_format_pattern.empty()) {
+                rp.time_format_pattern = time_format_pattern;
+                try { rp.time_format_regex = std::regex(time_format_pattern); }
+                catch (const std::exception& e) {
+                    spdlog::warn("Bad time format pattern '{}': {}", time_format_pattern, e.what());
+                }
+            }
+            if (!path_pattern.empty()) {
+                rp.path_pattern = path_pattern;
+                try { rp.path_regex = std::regex(path_pattern); }
+                catch (const std::exception& e) {
+                    spdlog::warn("Bad path pattern '{}': {}", path_pattern, e.what());
+                }
+            }
+            {
+                std::unique_lock<std::shared_mutex> lock(roots_mutex_);
+                roots_.emplace_back(std::move(rp));
+            }
         } catch (const std::exception& e) {
-            spdlog::error("Bad filename regex '{}': {}", filename_regex, e.what());
+            spdlog::error("Bad root path '{}': {}", root_path, e.what());
         }
     }
 
@@ -473,9 +487,18 @@ namespace drlog {
         std::vector<FileInfo> out;
         std::shared_lock<std::shared_mutex> lock(mutex_);
         for (const auto& [path, info] : index_) {
-            if (path.find(prefix) == 0) { // starts_with
-                out.push_back(info);
+            // check if prefix matches root path regex
+            try {
+                if (!std::regex_match(prefix, info.root_path.path_regex)) continue;
+            } catch (const std::regex_error& e) {
+                spdlog::warn("Regex error for path {}: {}", info.root_path.path, e.what());
+                continue;
             }
+            // check if root starts with prefix
+            if(prefix.find(info.root_path.path) != 0) continue;
+            // check if path starts with prefix
+            if(path.find(prefix) != 0) continue;
+            out.push_back(info);
         }
         return out;
     }
@@ -620,6 +643,12 @@ namespace drlog {
                 return;
             }
 
+            //make root path to temp map from roots_
+            std::unordered_map<std::string, RootPath> root_paths;
+            for (const auto &rp : roots_) {
+                root_paths.emplace(rp.path, rp);
+            }
+
             // build temporary map then swap in under lock
             std::unordered_map<std::string, FileInfo> tmp_index;
             for (const auto &o : j) {
@@ -634,11 +663,17 @@ namespace drlog {
                     fi.etag = o.value("etag", std::string());
                     fi.inode = o.value("inode", uint64_t(0));
                     std::string rp = o.value("root_path", std::string());
-                    fi.root_path.path = rp;
-                    // set generic regex so scanning still works (pattern matching not preserved)
-                    fi.root_path.filename_regex = std::regex(".*");
-                    fi.root_path.time_format_regex = std::regex(".*");
-
+                    // set regex from root_paths map
+                    if (root_paths.contains(rp)) {
+                        fi.root_path = root_paths[rp];
+                        fi.root_path.path_regex = std::regex(fi.root_path.path_pattern);
+                        fi.root_path.filename_regex = std::regex(fi.root_path.filename_pattern);
+                        fi.root_path.time_format_regex = std::regex(fi.root_path.time_format_pattern);
+                    } else {
+                        spdlog::warn("Root path {} not found in config, skipping cache entry {}", rp, fi.fullpath);
+                        continue;
+                    }
+                    
                     if (o.contains("file_index")) {
                         const auto &idx = o["file_index"];
                         auto pfi = std::make_shared<FileIndex>();

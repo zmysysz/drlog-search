@@ -198,12 +198,15 @@ int main(int argc, char* argv[]) {
     if (cfg.contains("paths") && cfg["paths"].is_array()) {
         for (const auto& p : cfg["paths"]) {
             if (!p.contains("path")) continue;
-            std::string root = p["path"].get<std::string>();
+            std::string root = p["path"].get<std::string>();    // root path to scan, e.g. "/var/log/"
             std::string namepattern = ".*";
             std::string time_format_pattern = "";
+            //regex pattern to match the path, use check the request prefix, e.g. "^/var/log/.+/.+", prefix must be "/var/log/xxx/xxx"
+            std::string path_pattern = ""; 
             if (p.contains("namepattern")) namepattern = p["namepattern"].get<std::string>();
             if (p.contains("time_format_pattern")) time_format_pattern = p["time_format_pattern"].get<std::string>();
-            indexer->add_root(root, namepattern, time_format_pattern);
+            if (p.contains("pathpattern")) path_pattern = p["pathpattern"].get<std::string>();
+            indexer->add_root(root, namepattern, time_format_pattern, path_pattern);
             spdlog::info("Added root: {} pattern: {}", root, namepattern);
             std::cout << "Added root: " << root << " pattern: " << namepattern << std::endl;
         }
