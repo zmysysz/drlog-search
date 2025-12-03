@@ -112,7 +112,66 @@
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
             margin-bottom: 20px;
+            position: relative; /* KEY: For absolute positioning of the help button */
         }
+        
+        /* --- Help Button and Popover Styles --- */
+        #help-icon {
+            position: absolute;
+            top: 20px; /* Aligned with top padding */
+            right: 20px; /* Aligned with right padding */
+            font-size: 1.5em;
+            color: #4a90e2;
+            cursor: pointer;
+            font-weight: bold;
+            line-height: 1;
+            padding: 0 5px;
+            border-radius: 50%;
+            transition: color 0.2s;
+        }
+
+        #help-icon:hover {
+            color: #357ABD;
+        }
+
+        #help-popover {
+            position: absolute;
+            top: 50px; /* Position below the icon */
+            right: 15px;
+            width: 350px;
+            background: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 15px;
+            z-index: 50;
+            display: none; /* KEY: Initially hidden */
+            font-size: 0.9em;
+        }
+
+        #help-popover h4 {
+            margin-top: 0;
+            color: #4a90e2;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        
+        #help-popover table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #help-popover th, #help-popover td {
+            padding: 5px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        #help-popover th {
+            background-color: #f7f9fa;
+            font-weight: bold;
+            color: #555;
+        }
+        /* --- End Help Styles --- */
 
         .time-row {
             display: flex;
@@ -259,12 +318,44 @@
             white-space: pre-wrap;
             word-break: break-all;
         }
-
+        
+        /* NEW: Styles for Two-Column Layout (Line Numbers) */
         .log-content pre {
+            /* Set <pre> to use flexbox for two-column structure (one line at a time) */
+            display: flex;
+            flex-direction: column; /* Stack the lines vertically */
+            
             white-space: pre-wrap;
-            word-break: break-word; /* Use break-word for compatibility and reliability */
-            margin: 0; /* Remove default <pre> margin */
+            word-break: break-word; 
+            margin: 0; 
             padding: 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+
+        /* NEW: Style for each log line wrapper (to enable two columns per line) */
+        .line-wrapper {
+            display: flex; /* Enables two sub-columns: number and content */
+        }
+
+        /* NEW: Style for the line number column */
+        .line-number {
+            /* Fixed width for line number column (adjust as needed based on max line count) */
+            width: 40px; 
+            /* Right alignment */
+            text-align: right; 
+            padding-right: 10px;
+            /* Color difference for visibility */
+            color: #5c6370; 
+            flex-shrink: 0; /* Prevent shrinking */
+            user-select: none; /* Crucial: Prevents copying the line number */
+        }
+
+        /* NEW: Style for the actual log content column */
+        .line-text {
+            /* Allow the text column to take the remaining space */
+            flex-grow: 1; 
+            /* Ensures the log content itself is selectable */
+            user-select: text; 
         }
 
         .agent-record.collapsed .log-content {
@@ -359,6 +450,37 @@
 
         <div class="main-content">
             <div class="query-config">
+                
+                <span id="help-icon" title="Query Syntax Help">?</span>
+                <div id="help-popover">
+                    <h4>Query Type Explanations</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Purpose</th>
+                                <th>Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>**Simple**</td>
+                                <td>Simple Keyword Search. Finds all lines containing the exact phrase or keyword specified.</td>
+                                <td>`error code 404`</td>
+                            </tr>
+                            <tr>
+                                <td>**Boolean**</td>
+                                <td>Logical Search (AND/OR/NOT). Finds lines that satisfy combined conditions using logical operators.</td>
+                                <td>`thread-pool AND (ERROR OR WARNING)`</td>
+                            </tr>
+                            <tr>
+                                <td>**Regex**</td>
+                                <td>Advanced Pattern Matching. Uses Regular Expressions to match specific text structures or formats.</td>
+                                <td>`(Client|Server)\[\d+\]:\s+\w+`</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
                 <form id="search-form">
                     <div class="time-row">
                         <div class="form-group">
@@ -375,7 +497,7 @@
                         </div>
                     </div>
                     <div class="form-group" style="align-items: flex-start;">
-                        <label>Querys</label>
+                        <label>Queries</label>
                         <div style="flex-grow: 1;">
                             <div id="querys-container"></div>
                             <button type="button" id="add-query-btn">+ Add Query Condition</button>
@@ -414,8 +536,27 @@
             const loadingOverlay = document.getElementById('loading-overlay');
             const historyList = document.getElementById('history-list');
             const messageBox = document.getElementById('message-box');
-
+            
+            // Help Elements
+            const helpIcon = document.getElementById('help-icon');
+            const helpPopover = document.getElementById('help-popover');
+            
             let currentPrefix = '';
+
+            // --- Help Popover Logic ---
+            helpIcon.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent the click from immediately hiding the popover
+                helpPopover.style.display = helpPopover.style.display === 'block' ? 'none' : 'block';
+            });
+
+            // Hide the popover when clicking anywhere else on the document
+            document.addEventListener('click', (e) => {
+                if (helpPopover.style.display === 'block' && !helpPopover.contains(e.target) && e.target !== helpIcon) {
+                    helpPopover.style.display = 'none';
+                }
+            });
+            // --- End Help Popover Logic ---
+
 
             // --- Sidebar Resizer Logic ---
             let isResizing = false;
@@ -522,6 +663,7 @@
                 itemDiv.querySelector('.query-type').value = type;
                 itemDiv.querySelector('.remove-query-btn').addEventListener('click', () => {
                     itemDiv.remove();
+                    // Keep at least one query item
                     if (querysContainer.children.length === 0) {
                         createQueryItem('xxx content', 'simple');
                     }
@@ -532,7 +674,7 @@
             // Initialize default query items
             if (querysContainer.children.length === 0) {
                 createQueryItem('xxx content', 'simple');
-                //createQueryItem('A AND/OR/NOT B', 'boolean');
+                createQueryItem('A AND/OR/NOT B', 'boolean');
             }
             document.getElementById('add-query-btn').addEventListener('click', () => createQueryItem());
 
@@ -609,7 +751,7 @@
                 }, 5000);
             };
             
-            // --- Result Formatting and Collapse Logic ---
+            // --- Result Formatting and Collapse Logic (MODIFIED for Non-Selectable Line Numbers) ---
 
             const formatLogResults = (result) => {
                 if (!result.records || result.records.length === 0) {
@@ -638,14 +780,24 @@
                         contentHtml += `<span class="log-error">msg: ${errorMsg}</span>`;
                         
                     } 
-                    // 2. Normal log output
+                    // 2. Normal log output (Using Flexbox to separate line number and content)
                     else if (lineCount > 0) {
                         totalLines += lineCount;
                         headerText = `agent:${record.agent}, file:${record.path}, lines:${lineCount}`;
 
                         contentHtml += '<pre>';
-                        lines.forEach(lineItem => {
-                            contentHtml += lineItem.line + '\n';
+                        lines.forEach((lineItem, index) => { 
+                            const lineNumber = index + 1; 
+                            const lineNumberStr = String(lineNumber); 
+
+                            // Append a two-column structure for each line:
+                            // .line-number (non-selectable) | .line-text (selectable)
+                            contentHtml += `
+                                <div class="line-wrapper">
+                                    <span class="line-number">${lineNumberStr}</span>
+                                    <span class="line-text">${lineItem.line}</span>
+                                </div>
+                            `; 
                         });
                         contentHtml += '</pre>';
                     } 
