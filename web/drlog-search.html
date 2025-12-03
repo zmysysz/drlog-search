@@ -260,6 +260,13 @@
             word-break: break-all;
         }
 
+        .log-content pre {
+            white-space: pre-wrap;
+            word-break: break-word; /* Use break-word for compatibility and reliability */
+            margin: 0; /* Remove default <pre> margin */
+            padding: 0;
+        }
+
         .agent-record.collapsed .log-content {
             max-height: 0;
             padding-top: 0;
@@ -525,7 +532,7 @@
             // Initialize default query items
             if (querysContainer.children.length === 0) {
                 createQueryItem('xxx content', 'simple');
-                createQueryItem('A AND/OR/NOT B', 'boolean');
+                //createQueryItem('A AND/OR/NOT B', 'boolean');
             }
             document.getElementById('add-query-btn').addEventListener('click', () => createQueryItem());
 
