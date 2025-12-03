@@ -15,12 +15,8 @@
   },
   "paths": [
     {
-      "path": "/var/log/nginx",
-      "namepattern": ".*\\.1log$|.*\\.1gz$",
-      "maxdays": 30
-    },
-    {
       "path": "/work/data/test_raw_log",
+      "pathpattern": "/work/data/test_raw_log/.+/.+",
       "namepattern": ".*\\.log$|.*\\.gz$",
       "maxdays": 30
     }
