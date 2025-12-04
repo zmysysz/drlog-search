@@ -76,18 +76,27 @@ namespace drlog {
                 spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));      
                 co_return;
             }
-
-            auto prefix = util::url_decode(ctx->get_param("prefix"));
-            if (prefix.empty()) {
-                res->result(http::status::bad_request);
-                spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
-                co_return;
-            }
             //load html file from path
-            auto web_file = web_path_ + "drlog-search.html";
+            std::string path = ctx->get_path();
+            std::string prefix_path = ctx->get_prifix_path();
+            std::string web_file("");
+            std::string file_type;
+            if(path.size() > prefix_path.size())
+                web_file = web_path_ + path.substr(prefix_path.size());
+            else {
+               //html check the prefix
+               auto prefix = util::url_decode(ctx->get_param("prefix"));
+                if (prefix.empty()) {
+                    res->result(http::status::bad_request);
+                    spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
+                    co_return;
+                }
+                web_file = web_path_ + "drlog-search.html";
+                file_type = "html";
+            }
             std::ifstream file(web_file);
             if (!file.is_open()) {
-                res->result(http::status::internal_server_error);
+                res->result(http::status::not_found);
                 spdlog::error("Failed to open web file: {}", web_file);
                 co_return;
             }
@@ -96,7 +105,8 @@ namespace drlog {
             file.close();
             // set response body
             res->body() = content;
-            res->set(http::field::content_type, "text/html");
+            if(file_type == "html" )
+                res->set(http::field::content_type, "text/html");
             res->result(http::status::ok);
             res->prepare_payload();
             co_return;
