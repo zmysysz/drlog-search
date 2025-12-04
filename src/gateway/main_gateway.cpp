@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
     bst::request_handler::register_route("/log/search", std::bind(&drlog::GTHandler::search, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     bst::request_handler::register_route("/agent/announce", std::bind(&drlog::GTHandler::announce, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     bst::request_handler::register_route("/agent/list", std::bind(&drlog::GTHandler::agent_list, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    bst::request_handler::register_route("/web", std::bind(&drlog::GTHandler::web, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    bst::request_handler::register_route("/web", std::bind(&drlog::GTHandler::web, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), true);
 
     spdlog::info("Server start on {}:{} with {} threads", address, port, threads);
     std::cout << "***************Server start****************" << std::endl;
