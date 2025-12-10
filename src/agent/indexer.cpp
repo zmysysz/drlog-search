@@ -18,6 +18,8 @@
 #include <nlohmann/json.hpp>
 #include <cstdio>
 #include "src/util/util.hpp"
+#include <sys/mman.h>
+#include <fcntl.h>
 
 namespace drlog {
     namespace fs = std::filesystem;
@@ -253,7 +255,7 @@ namespace drlog {
                 if (info.file_type == "gzip") {
                     update_file_index_gzip(path, info);
                 } else {
-                    update_file_index_txt(path, info);
+                    update_file_index_txt_mmap(path, info);
                 }
                 // update index_ with new file_index, index_etag, last_index_time
                 {
@@ -276,6 +278,7 @@ namespace drlog {
     // update file index for plain text file
     void FileIndexer::update_file_index_txt(const std::string& path, FileInfo& file_info) {
         // parse text file and build time index
+        double d1 = util::get_micro_timestamp();
         std::ifstream ifs(path, std::ios::binary);
         if (!ifs.is_open()) {
             spdlog::warn("Failed to open text file for indexing: {}", path);
@@ -306,7 +309,6 @@ namespace drlog {
                 last_recorded_bucket = static_cast<std::time_t>(last_index.timestamp);
             }
         }
-        std::time_t last_bucket;
         std::streampos last_start_pos;
         std::string last_line;
         while (ifs) {
@@ -317,10 +319,12 @@ namespace drlog {
                 if (!entries.empty()) {
                     uint64_t offset = 0;
                     if (last_start_pos!= std::streampos(-1)) offset = static_cast<uint64_t>(last_start_pos);
-                    last_bucket = get_timestamp_from_log_line(last_line);
-                    entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
-                    std::string time_str = util::format_timestamp(last_bucket);
-                    spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, offset, time_str);
+                    std::time_t bucket = get_timestamp_from_log_line(last_line);
+                    if(bucket!=0) {
+                        entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                        std::string time_str = util::format_timestamp(bucket);
+                        spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+                    }
                 }
                 break;
             }
@@ -333,7 +337,6 @@ namespace drlog {
 
             // bucket by interval
             std::time_t bucket = ts - (ts % interval);
-            last_bucket = bucket;
             last_start_pos = start_pos;
             last_line = line;
 
@@ -367,7 +370,116 @@ namespace drlog {
         // apply entries to file_info
         if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
         file_info.file_index->time_indexes = std::move(entries);
-        spdlog::info("Indexed text file {} entries={} skipped_lines={}", path, file_info.file_index->time_indexes.size(), skipped_lines);
+        double d2 = util::get_micro_timestamp();
+        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
+    }
+
+    void FileIndexer::update_file_index_txt_mmap(const std::string& path, FileInfo& file_info) {
+        // Open the file using memory-mapped I/O
+        double d1 = util::get_micro_timestamp();
+        std::ifstream ifs(path, std::ios::binary);
+        if (!ifs.is_open()) {
+            spdlog::warn("Failed to open text file for indexing: {}", path);
+            return;
+        }
+
+        ifs.seekg(0, std::ios::end);
+        uint64_t file_size = static_cast<uint64_t>(ifs.tellg());
+        ifs.seekg(0, std::ios::beg);
+        ifs.close();
+
+        std::vector<TimeIndex> entries;
+        entries.reserve(1024);
+
+        std::time_t last_recorded_bucket = 0;
+        std::size_t lines_since_last = 0;
+        const unsigned interval = index_interval_seconds_;
+        const std::size_t count_threshold = index_count_threshold_;
+        std::size_t skipped_lines = 0;
+
+        // Memory-map the file
+        int fd = open(path.c_str(), O_RDONLY);
+        if (fd == -1) {
+            spdlog::warn("Failed to open file descriptor for mmap: {}", path);
+            return;
+        }
+
+        void* mapped = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped == MAP_FAILED) {
+            spdlog::warn("Failed to mmap file: {}", path);
+            close(fd);
+            return;
+        }
+
+        const char* data = static_cast<const char*>(mapped);
+        const char* end = data + file_size;
+        const char* line_start = data;
+        //check for existing index to resume from last offset
+        if (file_info.file_index && !file_info.file_index->time_indexes.empty()) {
+            // start from last indexed offset
+            auto &index_entries = file_info.file_index->time_indexes;
+            const TimeIndex& last_index = file_info.file_index->time_indexes.back();
+            if (last_index.offset < file_size) {
+                line_start = data + static_cast<std::ptrdiff_t>(last_index.offset);
+                // insert existing index entries into entries vector
+                entries.insert(entries.end(), index_entries.begin(), index_entries.end() - 1);
+                last_recorded_bucket = static_cast<std::time_t>(last_index.timestamp);
+            }
+        }
+        std::string_view last_line;
+        uint64_t last_offset = 0;
+
+        while (line_start < end) {
+            const char* line_end = static_cast<const char*>(memchr(line_start, '\n', end - line_start));
+            if (!line_end) {
+                line_end = end; // Handle the last line without a newline
+                break;
+            }
+            uint64_t offset = static_cast<uint64_t>(line_start - data);
+            std::string_view line(line_start, line_end - line_start);
+            last_line = line;
+            last_offset = offset;
+            std::time_t ts = get_timestamp_from_log_line(std::string(line));
+            if (ts == 0) {
+                ++skipped_lines;
+                line_start = line_end + 1;
+                continue;
+            }
+
+            std::time_t bucket = ts - (ts % interval);
+            if (last_recorded_bucket == 0 ||
+                bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
+                lines_since_last >= count_threshold) {
+                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                last_recorded_bucket = bucket;
+                lines_since_last = 0;
+                std::string time_str = util::format_timestamp(bucket);
+                spdlog::debug("Added index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+            }
+
+            ++lines_since_last;
+            line_start = line_end + 1;
+        }
+        // add the last index entry
+        if (!entries.empty() && !last_line.empty()) {
+            uint64_t offset = 0;
+            if (line_start != data) offset = last_offset;
+            std::time_t bucket = get_timestamp_from_log_line(std::string(last_line));
+            if(bucket!=0) {
+                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                std::string time_str = util::format_timestamp(bucket);
+                spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+            }
+        }
+
+        munmap(mapped, file_size);
+        close(fd);
+
+        // Apply entries to file_info
+        if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
+        file_info.file_index->time_indexes = std::move(entries);
+        double d2 = util::get_micro_timestamp();
+        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
     }
 
     // update file index for gzip file (use zlib gzread) - robust offset handling
@@ -534,17 +646,20 @@ namespace drlog {
         for (auto it = index_.begin(); it != index_.end(); ) {
             //remove non-indexed files
             if (!it->second.file_index || it->second.file_index->time_indexes.empty()) {
-                spdlog::info("Removing unused index for file: {}", it->first);
-                it = index_.erase(it);
+                //spdlog::info("Removing unused index for file: {}", it->first);
+                //it = index_.erase(it);
+                //continue;
+                //keep the empty index file
+                ++it;
                 continue;
-            } else if (!fs::exists(it->first)) {
+            }
+            if (!fs::exists(it->first)) {
                 //remove deleted files
                 spdlog::info("Removing index for deleted file: {}", it->first);
                 it = index_.erase(it);
                 continue;
-            } else  {
-                ++it;
             }
+            ++it;
         }
     }
 
