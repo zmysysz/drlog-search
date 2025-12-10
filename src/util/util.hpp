@@ -19,5 +19,6 @@ namespace drlog {
         static std::string url_decode(const std::string& encoded_url);
         static std::string url_encode(const std::string& url);
         static std::vector<std::string> split(const std::string& str, char delimiter);
+        static double get_micro_timestamp();
     };
 } // namespace util

@@ -162,4 +162,10 @@ std::string util::format_timestamp(std::time_t ts, const std::string& format) {
         }
         return tokens;
     }
+
+    double util::get_micro_timestamp() {
+        return std::chrono::duration<double, std::micro>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+    }
 } // namespace util

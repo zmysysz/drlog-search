@@ -82,6 +82,7 @@ namespace drlog {
         void scan_root(RootPath const& rp);
         void update_file_index();
         void update_file_index_txt(const std::string& path, FileInfo& file_info);
+        void update_file_index_txt_mmap(const std::string& path, FileInfo& file_info);
         void update_file_index_gzip(const std::string& path, FileInfo& file_info);
         void save_index_to_cache();
         void load_index_from_cache();
