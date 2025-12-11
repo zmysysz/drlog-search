@@ -199,16 +199,25 @@ int main(int argc, char* argv[]) {
         for (const auto& p : cfg["paths"]) {
             if (!p.contains("path")) continue;
             std::string root = p["path"].get<std::string>();    // root path to scan, e.g. "/var/log/"
-            std::string namepattern = ".*";
+            std::string name_pattern = ".*";
             std::string time_format_pattern = "";
             //regex pattern to match the path, use check the request prefix, e.g. "^/var/log/.+/.+", prefix must be "/var/log/xxx/xxx"
             std::string path_pattern = ""; 
-            if (p.contains("namepattern")) namepattern = p["namepattern"].get<std::string>();
+            std::string prefix_pattern = "";
+            int max_days = 30;
+            if (p.contains("maxdays")) max_days = p["maxdays"].get<int>();
+            if (p.contains("prefixpattern")) prefix_pattern = p["prefixpattern"].get<std::string>();
+            if (p.contains("namepattern")) name_pattern = p["namepattern"].get<std::string>();
             if (p.contains("time_format_pattern")) time_format_pattern = p["time_format_pattern"].get<std::string>();
             if (p.contains("pathpattern")) path_pattern = p["pathpattern"].get<std::string>();
-            indexer->add_root(root, namepattern, time_format_pattern, path_pattern);
-            spdlog::info("Added root: {} pattern: {}", root, namepattern);
-            std::cout << "Added root: " << root << " pattern: " << namepattern << std::endl;
+            indexer->add_root(root, name_pattern, time_format_pattern, path_pattern, prefix_pattern, max_days);
+            spdlog::info("Added root path: {} with name pattern: {}, path pattern: {}, prefix pattern: {}, max days: {}", 
+                root, name_pattern, path_pattern, prefix_pattern, max_days);
+            std::cout << "Added root path: " << root 
+                << " with name pattern: " << name_pattern 
+                << ", path pattern: " << path_pattern 
+                << ", prefix pattern: " << prefix_pattern
+                << ", max days: " << max_days << std::endl;
         }
     }
     indexer->init_indexes();

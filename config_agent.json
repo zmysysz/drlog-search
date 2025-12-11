@@ -16,7 +16,8 @@
   "paths": [
     {
       "path": "/work/data/test_raw_log",
-      "pathpattern": "/work/data/test_raw_log/.+/.+",
+      "prefixpattern": "/work/data/test_raw_log/.+/.+",
+      "pathpattern": "^(?!.*\\/xxl-job\\/).*",
       "namepattern": ".*\\.log$|.*\\.gz$",
       "maxdays": 30
     }
