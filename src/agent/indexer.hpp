@@ -76,6 +76,7 @@ namespace drlog {
         void set_cache_path(const std::string& path) { cache_path_ = path; }
         bool get_file_index_by_path(const std::string& path, FileInfo& out_info) const;
         std::time_t get_timestamp_from_log_line(const std::string &line);
+        std::time_t get_timestamp_from_log_line(const std::string_view &line);
 
     private:
         void scan_loop();
@@ -84,6 +85,7 @@ namespace drlog {
         void update_file_index_txt(const std::string& path, FileInfo& file_info);
         void update_file_index_txt_mmap(const std::string& path, FileInfo& file_info);
         void update_file_index_gzip(const std::string& path, FileInfo& file_info);
+        void update_file_index_igzip(const std::string& path, FileInfo& file_info);
         void save_index_to_cache();
         void load_index_from_cache();
         void remove_unused_indexes();

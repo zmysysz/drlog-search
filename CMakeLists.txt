@@ -19,6 +19,8 @@ find_package(Threads REQUIRED)
 find_package(spdlog QUIET)
 # zlib is required for gzip indexing (gzopen/gzread/gzclose)
 find_package(ZLIB REQUIRED)
+# igzip library
+link_directories(${CMAKE_SOURCE_DIR}/libs/igzip)
 
 # nlohmann_json: prefer installed, else fetch
 find_package(nlohmann_json QUIET)
@@ -62,6 +64,7 @@ target_link_libraries(${SEVER_NAME_AGENT} PRIVATE
     nlohmann_json::nlohmann_json
     libboost_url.so
     ZLIB::ZLIB
+    isal.a
 )
 
 #gateway
