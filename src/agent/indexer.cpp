@@ -49,7 +49,7 @@ namespace drlog {
 
     // replace add_root implementation to accept time_format_regex
     void FileIndexer::add_root(const std::string& root_path, const std::string& filename_pattern, 
-        const std::string& time_format_pattern, const std::string& path_pattern) {
+        const std::string& time_format_pattern, const std::string& path_pattern, const std::string& prefix_pattern, int max_days) {
         try {
              RootPath rp;
              rp.path = root_path;
@@ -74,6 +74,14 @@ namespace drlog {
                     spdlog::warn("Bad path pattern '{}': {}", path_pattern, e.what());
                 }
             }
+            if (!prefix_pattern.empty()) {
+                rp.prefix_pattern = prefix_pattern;
+                try { rp.prefix_regex = std::regex(prefix_pattern); }
+                catch (const std::exception& e) {
+                    spdlog::warn("Bad prefix pattern '{}': {}", prefix_pattern, e.what());
+                }
+            }
+            rp.max_days = max_days;
             {
                 std::unique_lock<std::shared_mutex> lock(roots_mutex_);
                 roots_.emplace_back(std::move(rp));
@@ -159,9 +167,17 @@ namespace drlog {
                         continue;
                     }
                     if (!fs::is_regular_file(p)) continue;
+                    
                     std::string filename = p.filename().string();
-                    if (!std::regex_match(filename, pattern)) continue;
-
+                    //match path and name pattern
+                    try {
+                        if (!std::regex_match(p.string(), rp.path_regex)) continue;
+                        if (!std::regex_match(filename, pattern)) continue;
+                    } catch (const std::regex_error& e) {
+                        spdlog::warn("Regex error for path {}: {}", rp.path, e.what());
+                        continue;
+                    }
+                    
                     FileInfo info;
                     info.name = filename;
                     info.dir = p.parent_path().string();
@@ -786,7 +802,7 @@ namespace drlog {
         for (const auto& [path, info] : index_) {
             // check if prefix matches root path regex
             try {
-                if (!std::regex_match(prefix, info.root_path.path_regex)) continue;
+                if (!std::regex_match(prefix, info.root_path.prefix_regex)) continue;
             } catch (const std::regex_error& e) {
                 spdlog::warn("Regex error for path {}: {}", info.root_path.path, e.what());
                 continue;
@@ -993,6 +1009,7 @@ namespace drlog {
                         fi.root_path.path_regex = std::regex(fi.root_path.path_pattern);
                         fi.root_path.filename_regex = std::regex(fi.root_path.filename_pattern);
                         fi.root_path.time_format_regex = std::regex(fi.root_path.time_format_pattern);
+                        fi.root_path.prefix_regex = std::regex(fi.root_path.prefix_pattern);
                     } else {
                         spdlog::warn("Root path {} not found in config, skipping cache entry {}", rp, fi.fullpath);
                         continue;
