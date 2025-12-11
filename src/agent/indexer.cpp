@@ -92,15 +92,15 @@ namespace drlog {
     }
 
     void FileIndexer::init_indexes() {
-        //load existing index from cache on startup
-        load_index_from_cache();
         //step1 scan the roots
         for (const auto& rp : roots_) scan_root(rp);
-        //step2 update file index
+        //step2 load existing index from cache on startup
+        load_index_from_cache();
+        //step3 update file index
         update_file_index();
-        //step3 remove unused indexes
+        //step4 remove unused indexes
         remove_unused_indexes();
-        //step4 write to cache
+        //step5 write to cache
         save_index_to_cache();
     }
 
@@ -144,7 +144,6 @@ namespace drlog {
     void FileIndexer::scan_root(RootPath const& rp) {
         try {
             const std::string& root = rp.path;
-            const std::regex& pattern = rp.filename_regex;
 
             if (!fs::exists(root) || !fs::is_directory(root)) return;
             for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied);
@@ -171,8 +170,8 @@ namespace drlog {
                     std::string filename = p.filename().string();
                     //match path and name pattern
                     try {
-                        if (!std::regex_match(p.string(), rp.path_regex)) continue;
-                        if (!std::regex_match(filename, pattern)) continue;
+                        if (!rp.path_pattern.empty() && !std::regex_match(p.string(), rp.path_regex)) continue;
+                        if (!rp.filename_pattern.empty() && !std::regex_match(filename, rp.filename_regex)) continue;
                     } catch (const std::regex_error& e) {
                         spdlog::warn("Regex error for path {}: {}", rp.path, e.what());
                         continue;
@@ -995,6 +994,13 @@ namespace drlog {
                 try {
                     FileInfo fi;
                     fi.fullpath = o.value("fullpath", std::string());
+                    std::string rp = o.value("root_path", std::string());
+                    // set regex from root_paths map
+                    if (root_paths.find(rp) == root_paths.end() || index_.find(fi.fullpath) == index_.end()) {
+                        spdlog::warn("Skipping cache entry with unknown root path or past by filter: {}", fi.fullpath);
+                        continue;
+                    }
+                    fi.root_path = root_paths[rp];
                     fi.name = o.value("name", std::string());
                     fi.dir = o.value("dir", std::string());
                     fi.size = o.value("size", std::uint64_t(0));
@@ -1002,18 +1008,11 @@ namespace drlog {
                     fi.file_type = o.value("ftype", std::string());
                     fi.etag = o.value("etag", std::string());
                     fi.inode = o.value("inode", uint64_t(0));
-                    std::string rp = o.value("root_path", std::string());
-                    // set regex from root_paths map
-                    if (root_paths.contains(rp)) {
-                        fi.root_path = root_paths[rp];
-                        fi.root_path.path_regex = std::regex(fi.root_path.path_pattern);
-                        fi.root_path.filename_regex = std::regex(fi.root_path.filename_pattern);
-                        fi.root_path.time_format_regex = std::regex(fi.root_path.time_format_pattern);
-                        fi.root_path.prefix_regex = std::regex(fi.root_path.prefix_pattern);
-                    } else {
-                        spdlog::warn("Root path {} not found in config, skipping cache entry {}", rp, fi.fullpath);
-                        continue;
-                    }
+        
+                    fi.root_path.path_regex = std::regex(fi.root_path.path_pattern);
+                    fi.root_path.filename_regex = std::regex(fi.root_path.filename_pattern);
+                    fi.root_path.time_format_regex = std::regex(fi.root_path.time_format_pattern);
+                    fi.root_path.prefix_regex = std::regex(fi.root_path.prefix_pattern);
                     
                     if (o.contains("file_index")) {
                         const auto &idx = o["file_index"];
