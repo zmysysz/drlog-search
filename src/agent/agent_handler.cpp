@@ -167,6 +167,9 @@ namespace drlog {
                 if(fm_ptr->status != 0) {
                     continue;
                 }
+                if(fm_ptr->lines.empty()) {
+                    continue;
+                }
                 nlohmann::json jfm;
                 jfm["path"] = fm_ptr->path;
                 jfm["status"] = fm_ptr->status;
@@ -178,13 +181,8 @@ namespace drlog {
                     jline["time"] = logline.timestamp;
                     jfm["lines"].push_back(jline);
                 }
-                if(!fm_ptr->lines.empty()) {
-                    jfm["start_time"] = fm_ptr->lines.front().timestamp;
-                    jfm["end_time"] = fm_ptr->lines.back().timestamp;
-                } else {
-                    jfm["start_time"] = 0;
-                    jfm["end_time"] = 0;
-                }
+                jfm["start_time"] = fm_ptr->lines.front().timestamp;
+                jfm["end_time"] = fm_ptr->lines.back().timestamp;
                 jres["records"].push_back(jfm);
             }
             std::string res_body_j = jres.dump();
