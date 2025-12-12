@@ -313,6 +313,10 @@ namespace drlog {
                     spdlog::warn("Invalid records in record: {} : {}", agent_record.first, agent_record.second);
                     continue;
                 }
+                if(!jfm["records"].is_array() || jfm["records"].empty()) {
+                    spdlog::warn("Empty records in record: {} : {}", agent_record.first, agent_record.second);
+                    continue;
+                }
                 for(auto &record : jfm["records"]) {
                     record["agent"] = agent_record.first;
                     jres["records"].push_back(record);
