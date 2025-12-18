@@ -6,6 +6,7 @@
 #include "context.hpp"
 #include <boost/asio.hpp>
 #include <boost/stacktrace.hpp>
+#include <iomanip>
 
 namespace beast = boost::beast;         // from <boost/beast.hpp>
 namespace http = beast::http;           // from <boost/beast/http.hpp>
