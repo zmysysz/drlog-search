@@ -21,7 +21,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include "libs/date.h"
-#include "libs/igzip/igzip_lib.h"
+#include "util/igzip.hpp"
 
 namespace drlog {
     namespace fs = std::filesystem;
@@ -615,48 +615,22 @@ namespace drlog {
     }
 
     void FileIndexer::update_file_index_igzip(const std::string& path, FileInfo& file_info) {
-        // parse gzip file and build time index using igzip
+        // parse gzip file and build time index
         double d1 = util::get_micro_timestamp();
-
-        // Open the file using igzip
-        int fd = open(path.c_str(), O_RDONLY);
-        if (fd == -1) {
+        igzip_state igzs;
+        int ret = igzip::igzopen(path.c_str(), "rb",&igzs);
+        if (ret != 0) {
+            spdlog::warn("Failed to open gzip file for indexing: {}, ret: ", path, ret);
             return;
         }
 
-        struct inflate_state state;
-        struct isal_gzip_header gz_hdr;
-        isal_gzip_header_init(&gz_hdr);
-
-        isal_inflate_init(&state);
-        state.crc_flag = ISAL_GZIP_NO_HDR_VER;  // no header verification
-
-        const int IN_BUF_SIZE = 16 * 1024;
-        const int OUT_BUF_SIZE = 16 * 1024;
-        std::vector<uint8_t> in_buf(IN_BUF_SIZE);
-        std::vector<uint8_t> out_buf(OUT_BUF_SIZE);
-
-        // first read
-        ssize_t bytes_read = read(fd, in_buf.data(), IN_BUF_SIZE);
-        if (bytes_read <= 0) {
-            close(fd);
-            return;
-        }
-        state.next_in = in_buf.data();
-        state.avail_in = static_cast<uint32_t>(bytes_read);
-
-        // read and parse gzip header
-        int ret = isal_read_gzip_header(&state, &gz_hdr);
-        if (ret != ISAL_DECOMP_OK) {
-            close(fd);
-            return;
-        }
-
+        const int BUF_SIZE = 16*1024;
+        std::vector<uint8_t> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
         std::vector<TimeIndex> entries;
         entries.reserve(1024);
 
-        uint64_t total_uncompressed = 0;
+        uint64_t total_uncompressed = 0; // total uncompressed bytes BEFORE current chunk
         std::time_t last_recorded_bucket = 0;
         std::size_t lines_since_last = 0;
         const unsigned interval = index_interval_seconds_;
@@ -665,130 +639,90 @@ namespace drlog {
         
         uint64_t last_offset = 0;
         std::time_t last_bucket;
-        std::string_view last_line;
+        std::string last_line;
 
-        bool done = false;
-        while (!done) {
-            if (state.avail_in == 0) {
-                bytes_read = read(fd, in_buf.data(), IN_BUF_SIZE);
-                if (bytes_read <= 0) {
-                    // EOF OR read error
-                    done = true;
-                    if (!entries.empty() && last_offset != 0) {
-                        last_bucket = get_timestamp_from_log_line(last_line);
-                        entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), last_offset});
-                        std::string time_str = util::format_timestamp(last_bucket);
-                        spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, last_offset, time_str);
-                    }
-                    break;
-                }
-                state.next_in = in_buf.data();
-                state.avail_in = static_cast<uint32_t>(bytes_read);
+        while (true) {
+            int n = igzip::igzread(&igzs, buf);
+            if (n < 0) {
+                spdlog::warn("gzread error on {}, error: {}", path, ret);
+                break;
             }
-            int last_size = carry.size();
-            carry.resize(last_size+OUT_BUF_SIZE);
-            state.next_out = (uint8_t *)(char *)&carry[last_size];
-            state.avail_out = OUT_BUF_SIZE;
-
-            ret = isal_inflate(&state);
-            if (ret != ISAL_DECOMP_OK) {
-                // decompression error
+            if (n == 0) {
+                // end of file,add the last index entry
+                if (!entries.empty()) {
+                    uint64_t offset = 0;
+                    if (last_offset!= 0) offset = last_offset;
+                    last_bucket = get_timestamp_from_log_line(last_line);
+                    entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
+                    std::string time_str = util::format_timestamp(last_bucket);
+                    spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, offset, time_str);
+                }   
                 break;
             }
 
-            size_t n = OUT_BUF_SIZE - state.avail_out;  // decompressed bytes this round
-            if (n > 0) {
-                //carry.append(reinterpret_cast<char*>(out_buf.data()), n);
-                carry.resize(last_size+n);
-                size_t previous_carry_size = carry.size() - n;
-                uint64_t base_offset = total_uncompressed - previous_carry_size;
+            // Append exactly n bytes
+            carry.append((char *)buf.data(), static_cast<size_t>(n));
 
-                size_t pos = 0;
-                size_t processed_up_to = 0;
-                while (true) {
-                    size_t nl = carry.find('\n', pos);
-                    if (nl == std::string::npos) break;
+            // compute previous leftover size and base offset for this carry buffer
+            size_t previous_carry_size = (carry.size() >= static_cast<size_t>(n)) ? (carry.size() - static_cast<size_t>(n)) : 0;
+            uint64_t base_offset = (total_uncompressed >= previous_carry_size) ? (total_uncompressed - previous_carry_size) : 0;
 
-                    std::string_view line = std::string_view(carry).substr(pos, nl - pos);
-                    uint64_t line_start_offset = base_offset + pos;
+            // scan lines in carry
+            size_t pos = 0;
+            size_t processed_up_to = 0;
+            while (true) {
+                size_t nl = carry.find('\n', pos);
+                if (nl == std::string::npos) break;
+                std::string_view line = std::string_view(carry).substr(pos, nl - pos);
+                uint64_t line_start_offset = base_offset + pos;
 
-                    std::time_t ts = get_timestamp_from_log_line(line);
-                    if (ts == 0) {
-                        ++skipped_lines;
+                std::time_t ts = get_timestamp_from_log_line(line);
+                if (ts == 0) {
+                    // skip lines without timestamp and count them
+                    ++skipped_lines;
+                } else {
+                    std::time_t bucket = ts - (ts % interval);
+                    last_bucket = bucket;
+                    last_offset = line_start_offset;
+                    last_line = line;
+
+                    if (last_recorded_bucket == 0) {
+                        entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
+                        last_recorded_bucket = bucket;
+                        lines_since_last = 0;
+                        std::string time_str = util::format_timestamp(bucket);
+                        spdlog::debug("First index entry for {}: bucket={} offset={} time={}", path, bucket, line_start_offset,time_str);
+                        // continue to next line
                     } else {
-                        std::time_t bucket = ts - (ts % interval);
-                        last_bucket = bucket;
-                        last_offset = line_start_offset;
-                        last_line = line;
-
-                        if (last_recorded_bucket == 0) {
+                        lines_since_last++;
+                        if (bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
+                            lines_since_last >= count_threshold) {
                             entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
                             last_recorded_bucket = bucket;
                             lines_since_last = 0;
                             std::string time_str = util::format_timestamp(bucket);
-                            spdlog::debug("First index entry for {}: bucket={} offset={} time={}", path, bucket, line_start_offset,time_str);
-                            // continue to next line
-                        } else {
-                            lines_since_last++;
-                            if (bucket >= last_recorded_bucket + interval ||
-                                lines_since_last >= count_threshold) {
-                                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
-                                last_recorded_bucket = bucket;
-                                lines_since_last = 0;
-                                std::string time_str = util::format_timestamp(bucket);
-                                spdlog::debug("Added index entry for {}: bucket={} offset={} time={}", path, bucket, line_start_offset,time_str);
-                            }
+                            spdlog::debug("Added index entry for {}: bucket={} offset={} time={}", path, bucket, line_start_offset,time_str);
                         }
                     }
-
-                    pos = nl + 1;
-                    processed_up_to = pos;
                 }
 
-                if (processed_up_to > 0) {
-                    std::string tmp = carry.substr(processed_up_to);
-                    carry = std::move(tmp);
-                }
-
-                total_uncompressed += n;
+                pos = nl + 1;
+                processed_up_to = pos;
             }
 
-            // if finished a gzip member
-            if (state.block_state == ISAL_BLOCK_FINISH) {
-                // add the last index entry of this member
-                if (!entries.empty() && last_offset != 0 && n > 0) {  
-                    // ensure some data was decompressed
-                    last_bucket = get_timestamp_from_log_line(last_line);
-                    entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), last_offset});
-                    std::string time_str = util::format_timestamp(last_bucket);
-                    spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, last_offset, time_str);
-                }
-
-                // check for next member
-                if (state.avail_in == 0) {
-                    bytes_read = read(fd, in_buf.data(), IN_BUF_SIZE);
-                    if (bytes_read > 0) {
-                        state.next_in = in_buf.data();
-                        state.avail_in = static_cast<uint32_t>(bytes_read);
-                    }
-                }
-
-                if (state.avail_in > 1 && state.next_in[0] == 31 && state.next_in[1] == 139) {
-                    // found next member
-                    isal_inflate_reset(&state);
-                    ret = isal_read_gzip_header(&state, &gz_hdr);
-                    if (ret != ISAL_DECOMP_OK) {
-                        done = true;  // header error
-                    }
-                } else {
-                    done = true;  // no more members
-                }
+            // remove processed prefix (keep partial line)
+            if (processed_up_to > 0) {
+                std::string tmp = carry.substr(processed_up_to);
+                carry.swap(tmp);
             }
+
+            // advance total_uncompressed by n (bytes uncompressed in this chunk)
+            total_uncompressed += static_cast<uint64_t>(n);
         }
-        isal_inflate_reset(&state);
-        close(fd);
 
-        // Apply entries to file_info
+        igzip::igzclose(&igzs);
+
+        // apply entries to file_info
         if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
         file_info.file_index->time_indexes = std::move(entries);
         double d2 = util::get_micro_timestamp();

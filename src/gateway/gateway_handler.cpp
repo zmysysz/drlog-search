@@ -519,6 +519,9 @@ namespace drlog {
                         bst::http_client_async client;
                         req.url = url;
                         client.set_request_timeout(10);
+                        client.set_max_response_size(50 * 1024 * 1024); //50MB
+                        //set gzip accept encoding
+                        req.headers["Accept-Encoding"] = "gzip";
                         //add the index file list to the request body
                         nlohmann::json jreq_body_tmp = jreq_body;
                         jreq_body_tmp["paths"] = nlohmann::json::array();

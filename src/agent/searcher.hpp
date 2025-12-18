@@ -77,6 +77,7 @@ namespace drlog {
         void search_file(std::shared_ptr<SearchContext> ctx);
         void search_file_txt(std::shared_ptr<SearchContext> ctx);
         void search_file_gzip(std::shared_ptr<SearchContext> ctx);
+        void search_file_igzip(std::shared_ptr<SearchContext> ctx);
         void get_lines_gzip(std::string &carry,std::vector<std::string> &lines,size_t pos);
         bool timestamp_covers(uint64_t idx_satrt, uint64_t idx_end, uint64_t start_time, uint64_t end_time);
         bool parse_line(std::shared_ptr<SearchContext> ctx, std::string &line);

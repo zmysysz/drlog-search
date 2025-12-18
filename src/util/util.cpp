@@ -7,69 +7,69 @@
 
 namespace drlog {
 
-static constexpr unsigned long long DEFAULT_MURMUR_SEED = 3339675888ULL;
+    static constexpr unsigned long long DEFAULT_MURMUR_SEED = 3339675888ULL;
 
-unsigned long long util::MurMurHash64(const void* ptr, unsigned long long len, unsigned long long seed)
-{
-    const unsigned long long mul = (0xc6a4a793ULL << 32ULL) + 0x5bd1e995ULL;
-    const char* const buf = static_cast<const char*>(ptr);
-    
-    const int len_aligned = static_cast<int>(len & ~0x7);
-    const char* const end = buf + len_aligned;
-    unsigned long long hash = seed ^ (len * mul);
-    for (const char* p = buf; p != end; p += 8)
+    unsigned long long util::MurMurHash64(const void* ptr, unsigned long long len, unsigned long long seed)
     {
-        // read 8 bytes as little-endian unsigned long long
-        unsigned long long data;
-        std::memcpy(&data, p, sizeof(data));
-        data *= mul;
-        data = (data ^ (data >> 47)) * mul;
-        hash ^= data;
-        hash *= mul;
+        const unsigned long long mul = (0xc6a4a793ULL << 32ULL) + 0x5bd1e995ULL;
+        const char* const buf = static_cast<const char*>(ptr);
+        
+        const int len_aligned = static_cast<int>(len & ~0x7);
+        const char* const end = buf + len_aligned;
+        unsigned long long hash = seed ^ (len * mul);
+        for (const char* p = buf; p != end; p += 8)
+        {
+            // read 8 bytes as little-endian unsigned long long
+            unsigned long long data;
+            std::memcpy(&data, p, sizeof(data));
+            data *= mul;
+            data = (data ^ (data >> 47)) * mul;
+            hash ^= data;
+            hash *= mul;
+        }
+        if ((len & 0x7) != 0)
+        {
+            unsigned long long data = 0;
+            int n = (len & 0x7) - 1;
+            do {
+                data = (data << 8) + static_cast<unsigned char>(end[n]);
+            } while (--n >= 0);
+            hash ^= data;
+            hash *= mul;
+        }
+        hash = (hash ^ (hash >> 47)) * mul;
+        hash = hash ^ (hash >> 47);
+        return hash;
     }
-    if ((len & 0x7) != 0)
-    {
-        unsigned long long data = 0;
-        int n = (len & 0x7) - 1;
-        do {
-            data = (data << 8) + static_cast<unsigned char>(end[n]);
-        } while (--n >= 0);
-        hash ^= data;
-        hash *= mul;
-    }
-    hash = (hash ^ (hash >> 47)) * mul;
-    hash = hash ^ (hash >> 47);
-    return hash;
-}
 
-std::string util::etag_from_size_mtime(std::uint64_t size, std::time_t mtime) {
-    // pack size (8 bytes) and mtime (8 bytes) into buffer
-    unsigned char buf[16];
-    // ensure consistent little-endian packing
-    std::uint64_t s = size;
-    std::uint64_t t = static_cast<std::uint64_t>(mtime);
-    std::memcpy(buf, &s, sizeof(s));
-    std::memcpy(buf + sizeof(s), &t, sizeof(t));
-    unsigned long long hash = MurMurHash64(buf, sizeof(buf), DEFAULT_MURMUR_SEED);
-    std::ostringstream oss;
-    oss << std::hex << std::nouppercase << std::setfill('0') << std::setw(16) << hash;
-    return oss.str();
-}
-
-std::string util::format_timestamp(std::time_t ts, const std::string& format) {
-        std::tm tm{};
-        // use thread-safe localtime_r when available
-    #if defined(_POSIX_THREADS)
-        if (localtime_r(&ts, &tm) == nullptr) return "";
-    #else
-        auto tptr = std::localtime(&ts);
-        if (!tptr) return "";
-        tm = *tptr;
-    #endif
+    std::string util::etag_from_size_mtime(std::uint64_t size, std::time_t mtime) {
+        // pack size (8 bytes) and mtime (8 bytes) into buffer
+        unsigned char buf[16];
+        // ensure consistent little-endian packing
+        std::uint64_t s = size;
+        std::uint64_t t = static_cast<std::uint64_t>(mtime);
+        std::memcpy(buf, &s, sizeof(s));
+        std::memcpy(buf + sizeof(s), &t, sizeof(t));
+        unsigned long long hash = MurMurHash64(buf, sizeof(buf), DEFAULT_MURMUR_SEED);
         std::ostringstream oss;
-        oss << std::put_time(&tm, format.c_str());
+        oss << std::hex << std::nouppercase << std::setfill('0') << std::setw(16) << hash;
         return oss.str();
-}
+    }
+
+    std::string util::format_timestamp(std::time_t ts, const std::string& format) {
+            std::tm tm{};
+            // use thread-safe localtime_r when available
+        #if defined(_POSIX_THREADS)
+            if (localtime_r(&ts, &tm) == nullptr) return "";
+        #else
+            auto tptr = std::localtime(&ts);
+            if (!tptr) return "";
+            tm = *tptr;
+        #endif
+            std::ostringstream oss;
+            oss << std::put_time(&tm, format.c_str());
+            return oss.str();
+    }
 
     bool util::gzip_compress(const std::string& data, std::string& compressed_data) {
         z_stream strm = {};
@@ -105,23 +105,33 @@ std::string util::format_timestamp(std::time_t ts, const std::string& format) {
             spdlog::error("inflateInit2 failed with error code: {}", ret);
             return false;
         }
+        
         strm.avail_in = compressed_data.size();
         strm.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(compressed_data.data()));
-
-        decompressed_data.resize(compressed_data.size()); 
-        strm.avail_out = decompressed_data.size();
-        strm.next_out = reinterpret_cast<Bytef*>(decompressed_data.data());
-
-        ret = inflate(&strm, Z_FINISH);
-        if (ret != Z_STREAM_END) {
-            inflateEnd(&strm);
-            spdlog::error("inflate failed with error code: {}", ret);
-            return false;
-        }
-
-        decompressed_data.resize(strm.total_out);  
+        
+        // Decompress in chunks
+        const size_t CHUNK_SIZE = 65536;  // 64KB
+        std::vector<char> buffer(CHUNK_SIZE);
+        
+        do {
+            strm.avail_out = buffer.size();
+            strm.next_out = reinterpret_cast<Bytef*>(buffer.data());
+            
+            ret = inflate(&strm, Z_NO_FLUSH);
+            if (ret != Z_OK && ret != Z_STREAM_END) {
+                inflateEnd(&strm);
+                spdlog::error("inflate failed with error code: {}", ret);
+                return false;
+            }
+            
+            // Append decompressed data to output string
+            size_t have = buffer.size() - strm.avail_out;
+            decompressed_data.append(buffer.data(), have);
+            
+        } while (strm.avail_out == 0);
+        
         inflateEnd(&strm);
-        return true;
+        return ret == Z_STREAM_END;
     }
 
     std::string util::url_decode(const std::string &encoded_url) {
