@@ -42,6 +42,7 @@ set(SRC_FILES_AGENT
     src/util/util.cpp
     src/agent/searcher.cpp
     src/agent/searchers/boolean_searcher.cpp
+    src/util/igzip.cpp
 )
 
 add_executable(${SEVER_NAME_AGENT} ${SRC_FILES_AGENT})

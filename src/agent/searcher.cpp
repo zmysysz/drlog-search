@@ -8,6 +8,7 @@
 #include "searchers/simple_searcher.hpp"
 #include "searchers/boolean_searcher.hpp"
 #include "searchers/regex_searcher.hpp"
+#include "util/igzip.hpp"
 
 namespace drlog {
 
@@ -34,6 +35,9 @@ namespace drlog {
             if(be_matched) {
                 matched_count++;
                 ctx->matched_lines.emplace_back(std::move(line));
+            }
+            if(ctx->matched_lines.size() >= ctx->req->max_results) {
+                break;
             }
         }
         spdlog::debug("File '{}',search {} lines, matched {} lines, total matched {} lines", 
@@ -290,9 +294,9 @@ namespace drlog {
                             gzclose(gz);
                             return;
                         }
-                        if (ctx->matched_lines.size() >= req->max_results) {
-                            break;
-                        }
+                    }
+                    if (ctx->matched_lines.size() >= req->max_results) {
+                        break;
                     }
                 }
                 if(befaild) {
@@ -335,10 +339,154 @@ namespace drlog {
         gzclose(gz);
     }
 
+    void LogSearcher::search_file_igzip(std::shared_ptr<SearchContext> ctx) {
+        std::shared_ptr<FileInfo> file_index = ctx->index_file_info;
+        const std::string &path = ctx->path;
+        std::shared_ptr<SearchRequest> req = ctx->req;
+        // Open gzip file
+        igzip_state igzs;
+        int ret = igzip::igzopen(path.c_str(), "rb",&igzs);
+        if (ret != 0) {
+            spdlog::error("Failed to open igzip file {} for reading", path);
+            ctx->error_msg = "Failed to open igzip file for reading";
+            ctx->status = 1;
+            return;
+        }
+        try {
+            // Set up buffer
+            const int BUF_SIZE = 8192;
+            std::vector<uint8_t> buffer(BUF_SIZE);
+            std::string carry;
+            uint64_t total_uncompressed = 0;
+            
+            // Precisely position to start position
+            while (total_uncompressed < ctx->index_start_pos) {
+                // Calculate remaining bytes to skip
+                uint64_t remaining = ctx->index_start_pos - total_uncompressed;
+                // Read size not exceeding buffer size and remaining bytes
+                int read_size = std::min(BUF_SIZE, static_cast<int>(remaining));
+                int n = igzip::igzread(&igzs, buffer);
+                if (n < 0) {
+                    spdlog::error("Error reading gzip file {}: {}", path, n);
+                    ctx->error_msg = "Error reading gzip file";
+                    ctx->status = 1;
+                    igzip::igzclose(&igzs);
+                    return;
+                } 
+                if (n == 0) {
+                    ctx->error_msg = "Index start position is out of file range";
+                    ctx->status = 1;
+                    igzip::igzclose(&igzs);
+                    return;
+                }
+                total_uncompressed += static_cast<uint64_t>(n);
+                // If we didn't read enough bytes, file might have ended
+                if (n < read_size) {
+                    ctx->error_msg = "Index start position is out of file range";
+                    ctx->status = 1;
+                    igzip::igzclose(&igzs);
+                    return;
+                }
+            }
+            
+            // Ensure we reached the exact start position
+            if (total_uncompressed != ctx->index_start_pos) {
+                ctx->error_msg = "Could not reach exact start position in gzip file";
+                ctx->status = 1;
+                igzip::igzclose(&igzs);
+                return;
+            }
+            
+            // Read and process file content until end position
+            while (total_uncompressed < ctx->index_end_pos) {
+                int n = igzip::igzread(&igzs, buffer);
+                if (n < 0) {
+                    spdlog::error("Error reading gzip file {}: {}", path, n);
+                    ctx->error_msg = "Error reading gzip file";
+                    ctx->status = 1;
+                    igzip::igzclose(&igzs);
+                    return;
+                }
+                if (n == 0) {
+                    // Reached end of file before end position
+                    break;
+                }
+                
+                carry.append((char *)buffer.data(), n);
+                total_uncompressed += static_cast<uint64_t>(n);
+                
+                // Get lines from carry
+                std::vector<std::string> lines;
+                get_lines_gzip(carry,lines,0);
+                bool befaild = false;
+                for(auto &line : lines) {
+                    bool besucc = parse_line(ctx, line);
+                    if(!besucc) {
+                        befaild = true;
+                        break;
+                    }
+                    if(ctx->log_lines.size() >= MAX_BATCH_MATCHES) {
+                        //search the line
+                        besucc = exec_searchers(ctx);
+                        std::vector<LogLine>().swap(ctx->log_lines);
+                        if(!besucc) {
+                            spdlog::error("Failed to execute searchers for file {}", path);
+                            ctx->error_msg = "Failed to execute searchers for file";
+                            ctx->status = 1;
+                            igzip::igzclose(&igzs);
+                            return;
+                        }
+                    }
+                    if (ctx->matched_lines.size() >= req->max_results) {
+                            break;
+                    }
+                }
+                if(befaild) {
+                    spdlog::error("Failed to parse line for file {}", path);
+                    break;
+                }
+                std::vector<std::string>().swap(lines);
+                // Check if exceeded end position
+                if (total_uncompressed >= ctx->index_end_pos) {
+                    break;
+                }
+            }
+            if(!ctx->tmp_line.line.empty()) {
+                    LogLine ll;
+                    ll.line.swap(ctx->tmp_line.line);
+                    ll.timestamp = ctx->tmp_line.timestamp;
+                    ctx->log_lines.emplace_back(std::move(ll));
+            }
+            if(!ctx->log_lines.empty()) {
+                    //match the lines
+                    bool besucc = exec_searchers(ctx);
+                    if(!besucc) {
+                        spdlog::error("Failed to execute searchers for file {}", path);
+                        ctx->error_msg = "Failed to execute searchers for file";
+                        ctx->status = 1;
+                        igzip::igzclose(&igzs);
+                        return;
+                    }
+                    std::vector<LogLine>().swap(ctx->log_lines);
+            }
+            
+        } catch (const std::exception& e) {
+            spdlog::error("Error processing gzip file {}: {}", path, e.what());
+            ctx->error_msg = "Error processing gzip file";
+            ctx->status = 1;
+        } catch (...) {
+            spdlog::error("Unknown error processing gzip file {}", path);
+            ctx->error_msg = "Unknown error processing gzip file";
+            ctx->status = 1;
+        }
+        igzip::igzclose(&igzs);
+    }
+
+
     void LogSearcher::search_file(std::shared_ptr<SearchContext> ctx) {
         std::string type = ctx->index_file_info->file_type;
         if (type == "gzip") {
-            search_file_gzip(ctx);
+            search_file_igzip(ctx);
         } else {
             search_file_txt(ctx);
         }
