@@ -83,7 +83,7 @@ namespace drlog {
             }
             rp.max_days = max_days;
             {
-                std::unique_lock<std::shared_mutex> lock(roots_mutex_);
+                std::unique_lock<std::shared_mutex> lock(mutex_);
                 roots_.emplace_back(std::move(rp));
             }
         } catch (const std::exception& e) {
@@ -121,7 +121,7 @@ namespace drlog {
             try {
                 std::vector<RootPath> roots_copy;
                 {
-                    std::shared_lock<std::shared_mutex> rlock(roots_mutex_);
+                    std::shared_lock<std::shared_mutex> rlock(mutex_);
                     roots_copy = roots_;
                 }
                 //step1 scan the roots
@@ -407,7 +407,7 @@ namespace drlog {
 
         std::vector<TimeIndex> entries;
         entries.reserve(1024);
-
+        const int MAX_LINE_SIZE = 16*1024; // maximum line size to prevent excessive carry growth
         std::time_t last_recorded_bucket = 0;
         std::size_t lines_since_last = 0;
         const unsigned interval = index_interval_seconds_;
@@ -454,6 +454,13 @@ namespace drlog {
             }
             uint64_t offset = static_cast<uint64_t>(line_start - data);
             std::string_view line(line_start, line_end - line_start);
+            if(line.size() > MAX_LINE_SIZE) {
+                spdlog::debug("Line size exceeded max line size for {}, give up line at offset {}", path, offset);
+                line_start = line_end + 1;
+                ++skipped_lines;
+                continue;
+            }
+
             last_line = line;
             last_offset = offset;
             std::time_t ts = get_timestamp_from_log_line(line);
@@ -510,6 +517,7 @@ namespace drlog {
         }
 
         const int BUF_SIZE = 16*1024;
+        const int MAX_LINE_SIZE = 16*1024; // maximum line size to prevent excessive carry growth
         std::vector<char> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
         std::vector<TimeIndex> entries;
@@ -549,6 +557,11 @@ namespace drlog {
 
             // Append exactly n bytes
             carry.append(buf.data(), static_cast<size_t>(n));
+            if(carry.size() > MAX_LINE_SIZE) {
+                spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                std::string().swap(carry);
+                break;
+            }
 
             // compute previous leftover size and base offset for this carry buffer
             size_t previous_carry_size = (carry.size() >= static_cast<size_t>(n)) ? (carry.size() - static_cast<size_t>(n)) : 0;
@@ -625,8 +638,10 @@ namespace drlog {
         }
 
         const int BUF_SIZE = 16*1024;
+        const int MAX_LINE_SIZE = 4*1024*1024;
         std::vector<uint8_t> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
+        carry.resize(BUF_SIZE);
         std::vector<TimeIndex> entries;
         entries.reserve(1024);
 
@@ -662,6 +677,11 @@ namespace drlog {
 
             // Append exactly n bytes
             carry.append((char *)buf.data(), static_cast<size_t>(n));
+            if(carry.size() > MAX_LINE_SIZE) {
+                spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                std::string().swap(carry);
+                break;
+            }
 
             // compute previous leftover size and base offset for this carry buffer
             size_t previous_carry_size = (carry.size() >= static_cast<size_t>(n)) ? (carry.size() - static_cast<size_t>(n)) : 0;
