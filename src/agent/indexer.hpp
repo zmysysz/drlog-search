@@ -97,7 +97,6 @@ namespace drlog {
         std::unordered_map<std::string, FileInfo> index_; // key = fullpath
 
         std::vector<RootPath> roots_;
-        mutable std::shared_mutex roots_mutex_;
 
         std::thread worker_;
         std::atomic<bool> running_;

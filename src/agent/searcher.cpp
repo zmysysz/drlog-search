@@ -209,6 +209,7 @@ namespace drlog {
         try {
             // Set up buffer
             const int BUF_SIZE = 8192;
+            const int MAX_LINE_SIZE = 4*1024*1024;
             std::vector<char> buffer(BUF_SIZE);
             std::string carry;
             uint64_t total_uncompressed = 0;
@@ -271,6 +272,12 @@ namespace drlog {
                 }
                 
                 carry.append(buffer.data(), n);
+                if(carry.size() > MAX_LINE_SIZE) {
+                    spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                    std::string().swap(carry);
+                    break;
+                }
+
                 total_uncompressed += static_cast<uint64_t>(n);
                 
                 // Get lines from carry
@@ -355,6 +362,7 @@ namespace drlog {
         try {
             // Set up buffer
             const int BUF_SIZE = 8192;
+            const int MAX_LINE_SIZE = 4*1024*1024;
             std::vector<uint8_t> buffer(BUF_SIZE);
             std::string carry;
             uint64_t total_uncompressed = 0;
@@ -413,6 +421,12 @@ namespace drlog {
                 }
                 
                 carry.append((char *)buffer.data(), n);
+                if(carry.size() > MAX_LINE_SIZE) {
+                    spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                    std::string().swap(carry);
+                    break;
+                }
+
                 total_uncompressed += static_cast<uint64_t>(n);
                 
                 // Get lines from carry
