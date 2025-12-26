@@ -349,6 +349,10 @@ namespace drlog {
             if (ts == 0) {
                 // no timestamp -> skip and count
                 ++skipped_lines;
+                if(skipped_lines > 5000 && entries.empty()) {
+                    spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
+                    break;
+                }   
                 continue;
             }
 
@@ -466,6 +470,10 @@ namespace drlog {
             std::time_t ts = get_timestamp_from_log_line(line);
             if (ts == 0) {
                 ++skipped_lines;
+                if(skipped_lines > 5000 && entries.empty()) {
+                    spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
+                    break;
+                }
                 line_start = line_end + 1;
                 continue;
             }
@@ -475,10 +483,13 @@ namespace drlog {
                 bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
                 lines_since_last >= count_threshold) {
                 entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
-                last_recorded_bucket = bucket;
                 lines_since_last = 0;
                 std::string time_str = util::format_timestamp(bucket);
-                spdlog::debug("Added index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+                if(last_recorded_bucket == 0)
+                    spdlog::debug("First index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+                else
+                    spdlog::debug("Added index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
+                last_recorded_bucket = bucket;
             }
 
             ++lines_since_last;
@@ -580,6 +591,11 @@ namespace drlog {
                 if (ts == 0) {
                     // skip lines without timestamp and count them
                     ++skipped_lines;
+                    if(skipped_lines > 5000 && entries.empty()) {
+                        spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
+                        break;
+                    }
+                    pos = nl + 1;
                 } else {
                     std::time_t bucket = ts - (ts % interval);
                     last_bucket = bucket;
@@ -700,6 +716,10 @@ namespace drlog {
                 if (ts == 0) {
                     // skip lines without timestamp and count them
                     ++skipped_lines;
+                    if(skipped_lines > 5000 && entries.empty()) {
+                        spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
+                        break;
+                    }
                 } else {
                     std::time_t bucket = ts - (ts % interval);
                     last_bucket = bucket;
