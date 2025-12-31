@@ -51,7 +51,7 @@ namespace drlog {
         std::string etag;
         uint64_t inode{0};
         std::shared_ptr<FileIndex> file_index;
-        RootPath root_path;
+        std::shared_ptr<RootPath> root_path;
     };
 
     class FileIndexer {
@@ -82,21 +82,21 @@ namespace drlog {
 
     private:
         void scan_loop();
-        void scan_root(RootPath const& rp);
+        void scan_root(const std::shared_ptr<RootPath> rp);
         void update_file_index();
-        void update_file_index_txt(const std::string& path, FileInfo& file_info);
-        void update_file_index_txt_mmap(const std::string& path, FileInfo& file_info);
-        void update_file_index_gzip(const std::string& path, FileInfo& file_info);
-        void update_file_index_igzip(const std::string& path, FileInfo& file_info);
+        void update_file_index_txt(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs);
+        void update_file_index_txt_mmap(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs);
+        void update_file_index_gzip(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs);
+        void update_file_index_igzip(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs);
         void save_index_to_cache();
         void load_index_from_cache();
         void remove_unused_indexes();
 
     private:
         mutable std::shared_mutex mutex_;
-        std::unordered_map<std::string, FileInfo> index_; // key = fullpath
+        std::unordered_map<std::string, std::shared_ptr<FileInfo>> index_; // key = fullpath
 
-        std::vector<RootPath> roots_;
+        std::vector<std::shared_ptr<RootPath>> roots_;
 
         std::thread worker_;
         std::atomic<bool> running_;
