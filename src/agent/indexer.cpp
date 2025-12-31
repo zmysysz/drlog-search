@@ -51,37 +51,37 @@ namespace drlog {
     void FileIndexer::add_root(const std::string& root_path, const std::string& filename_pattern, 
         const std::string& time_format_pattern, const std::string& path_pattern, const std::string& prefix_pattern, int max_days) {
         try {
-             RootPath rp;
-             rp.path = root_path;
+             std::shared_ptr<RootPath> rp = std::make_shared<RootPath>();
+             rp->path = root_path;
              if (!filename_pattern.empty()) {
-                rp.filename_pattern = filename_pattern;
-                try { rp.filename_regex = std::regex(filename_pattern); }
+                rp->filename_pattern = filename_pattern;
+                try { rp->filename_regex = std::regex(filename_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad filename pattern '{}': {}", filename_pattern, e.what());
                 }
             }
             if (!time_format_pattern.empty()) {
-                rp.time_format_pattern = time_format_pattern;
-                try { rp.time_format_regex = std::regex(time_format_pattern); }
+                rp->time_format_pattern = time_format_pattern;
+                try { rp->time_format_regex = std::regex(time_format_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad time format pattern '{}': {}", time_format_pattern, e.what());
                 }
             }
             if (!path_pattern.empty()) {
-                rp.path_pattern = path_pattern;
-                try { rp.path_regex = std::regex(path_pattern); }
+                rp->path_pattern = path_pattern;
+                try { rp->path_regex = std::regex(path_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad path pattern '{}': {}", path_pattern, e.what());
                 }
             }
             if (!prefix_pattern.empty()) {
-                rp.prefix_pattern = prefix_pattern;
-                try { rp.prefix_regex = std::regex(prefix_pattern); }
+                rp->prefix_pattern = prefix_pattern;
+                try { rp->prefix_regex = std::regex(prefix_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad prefix pattern '{}': {}", prefix_pattern, e.what());
                 }
             }
-            rp.max_days = max_days;
+            rp->max_days = max_days;
             {
                 std::unique_lock<std::shared_mutex> lock(mutex_);
                 roots_.emplace_back(std::move(rp));
@@ -119,13 +119,8 @@ namespace drlog {
     void FileIndexer::scan_loop() {
         while (running_) {
             try {
-                std::vector<RootPath> roots_copy;
-                {
-                    std::shared_lock<std::shared_mutex> rlock(mutex_);
-                    roots_copy = roots_;
-                }
                 //step1 scan the roots
-                for (const auto& rp : roots_copy) scan_root(rp);
+                for (const auto& rp : roots_) scan_root(rp);
                 //step2 update file index
                 update_file_index();
                 //step3 remove unused indexes
@@ -141,9 +136,9 @@ namespace drlog {
     }
 
     // Updated signature: accept RootPath const&
-    void FileIndexer::scan_root(RootPath const& rp) {
+    void FileIndexer::scan_root(const std::shared_ptr<RootPath> rp) {
         try {
-            const std::string& root = rp.path;
+            const std::string& root = rp->path;
 
             if (!fs::exists(root) || !fs::is_directory(root)) return;
             for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied);
@@ -170,20 +165,21 @@ namespace drlog {
                     std::string filename = p.filename().string();
                     //match path and name pattern
                     try {
-                        if (!rp.path_pattern.empty() && !std::regex_match(p.string(), rp.path_regex)) continue;
-                        if (!rp.filename_pattern.empty() && !std::regex_match(filename, rp.filename_regex)) continue;
+                        if (!rp->path_pattern.empty() && !std::regex_match(p.string(), rp->path_regex)) continue;
+                        if (!rp->filename_pattern.empty() && !std::regex_match(filename, rp->filename_regex)) continue;
                     } catch (const std::regex_error& e) {
-                        spdlog::warn("Regex error for path {}: {}", rp.path, e.what());
+                        spdlog::warn("Regex error for path {}: {}", rp->path, e.what());
                         continue;
                     }
                     
-                    FileInfo info;
-                    info.name = filename;
-                    info.dir = p.parent_path().string();
-                    info.fullpath = p.string();
-                    info.size = static_cast<std::uint64_t>(fs::file_size(p));
+                    
+                    std::shared_ptr<FileInfo> info = std::make_shared<FileInfo>();
+                    info->name = filename;
+                    info->dir = p.parent_path().string();
+                    info->fullpath = p.string();
+                    info->size = static_cast<std::uint64_t>(fs::file_size(p));
                     // set inode from stat result
-                    info.inode = static_cast<uint64_t>(st.st_ino);
+                    info->inode = static_cast<uint64_t>(st.st_ino);
 
                     // portable conversion from filesystem::file_time_type to system_clock::time_point
                     auto ftime = fs::last_write_time(p);
@@ -199,34 +195,34 @@ namespace drlog {
                         auto diff_sys = std::chrono::duration_cast<std::chrono::system_clock::duration>(diff);
                         sctp = now_sys + diff_sys;
                     }
-                    info.mtime = std::chrono::system_clock::to_time_t(sctp);
+                    info->mtime = std::chrono::system_clock::to_time_t(sctp);
                     // determine file type based on suffix
                     std::string lower = filename;
                     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c){ return std::tolower(c); });
                     if (lower.size() >= 3 && lower.substr(lower.size()-3) == ".gz") {
-                        info.file_type = "gzip";
+                        info->file_type = "gzip";
                     } else {
-                        info.file_type = "text";
+                        info->file_type = "text";
                     }
                     // compute cheap etag using util helper (size + mtime)
-                    info.etag = util::etag_from_size_mtime(info.size, info.mtime);
-                    info.root_path = rp;
+                    info->etag = util::etag_from_size_mtime(info->size, info->mtime);
+                    info->root_path = rp;
 
                     // insert or update under unique lock
                     {
                         std::unique_lock<std::shared_mutex> lock(mutex_);
-                        auto itmap = index_.find(info.fullpath);
-                        if (itmap == index_.end() || itmap->second.inode != info.inode) {
-                            index_.emplace(info.fullpath, info);
-                            spdlog::info("Indexed new file: {} inode={}", info.fullpath, info.inode);
+                        auto itmap = index_.find(info->fullpath);
+                        if (itmap == index_.end() || itmap->second->inode != info->inode) {
+                            index_[info->fullpath] = info;
+                            spdlog::info("Indexed new file: {} inode={}", info->fullpath, info->inode);
                         } else {
-                            if (itmap->second.size != info.size || itmap->second.mtime != info.mtime) {
-                                info.file_index = itmap->second.file_index; // preserve existing file_index
+                            if (itmap->second->size != info->size || itmap->second->mtime != info->mtime) {
+                                info->file_index = itmap->second->file_index; // preserve existing file_index
                                 itmap->second = info; // update
-                                spdlog::info("Updated file info: {} inode={}", info.fullpath, info.inode);
+                                spdlog::info("Updated file info: {} inode={}", info->fullpath, info->inode);
                             } else {
                                 // no change
-                                spdlog::debug("No change for file: {} inode={}", info.fullpath, info.inode);
+                                spdlog::debug("No change for file: {} inode={}", info->fullpath, info->inode);
                             }
                         }
                     }
@@ -236,54 +232,40 @@ namespace drlog {
                 }
             }
         } catch (const std::exception& e) {
-            spdlog::error("scan_root error for {}: {}", rp.path, e.what());
+            spdlog::error("scan_root error for {}: {}", rp->path, e.what());
         }
     }
 
     void FileIndexer::update_file_index() {
         updated_index_count_ = 0;
-        std::vector<std::pair<std::string, FileInfo>> snapshot;
-        {
-            std::shared_lock<std::shared_mutex> lock(mutex_);
-            snapshot.reserve(index_.size());
-            for (const auto& kv : index_) {
-                snapshot.emplace_back(kv.first, kv.second);
-                snapshot.back().second.file_index = std::make_shared<FileIndex>();
-                if(kv.second.file_index) {
-                    // copy existing index data
-                    *(snapshot.back().second.file_index) = *(kv.second.file_index);
-                }
-            }
-        }
-
-        for (auto& kv : snapshot) {
+        for (auto& kv : index_) {
             const std::string& path = kv.first;
-            FileInfo &info = kv.second;
+            std::shared_ptr<FileInfo> info = kv.second;
             bool need_update = false;
-            if (!info.file_index) {
+            if (!info->file_index) {
                 need_update = true;
-            } else if (info.file_index->index_etag != info.etag) {
+            } else if (info->file_index->index_etag != info->etag) {
                 need_update = true;
             }
             if (!need_update) continue;
 
             try {
                 // choose handler based on suffix
-                if (info.file_type == "gzip") {
-                    update_file_index_igzip(path, info);
+                std::vector<TimeIndex> outputs;
+                if (info->file_type == "gzip") {
+                    update_file_index_igzip(path, *info, outputs);
                 } else {
-                    update_file_index_txt_mmap(path, info);
+                    update_file_index_txt_mmap(path, *info, outputs);
                 }
                 // update index_ with new file_index, index_etag, last_index_time
                 {
                     std::unique_lock<std::shared_mutex> wlock(mutex_);
-                    auto it = index_.find(path);
-                    if (it != index_.end()) {
-                        // apply changes
-                        it->second.file_index = info.file_index;
-                        it->second.file_index->index_etag = info.etag;
-                        it->second.file_index->last_index_time = std::time(nullptr);
+                    if(info->file_index == nullptr) {
+                        info->file_index = std::make_shared<FileIndex>();
                     }
+                    info->file_index->time_indexes.swap(outputs);
+                    info->file_index->index_etag = info->etag;
+                    info->file_index->last_index_time = std::time(nullptr);
                 }
                 updated_index_count_++;
             } catch (const std::exception& e) {
@@ -293,7 +275,7 @@ namespace drlog {
     }
 
     // update file index for plain text file
-    void FileIndexer::update_file_index_txt(const std::string& path, FileInfo& file_info) {
+    void FileIndexer::update_file_index_txt(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs) {
         // parse text file and build time index
         double d1 = util::get_micro_timestamp();
         std::ifstream ifs(path, std::ios::binary);
@@ -305,9 +287,7 @@ namespace drlog {
         ifs.seekg(0, std::ios::end);
         uint64_t file_size = (uint64_t)ifs.tellg();
         ifs.seekg(0, std::ios::beg);
-
-        std::vector<TimeIndex> entries;
-        entries.reserve(1024);
+        outputs.reserve(1024);
         std::string line;
         std::time_t last_recorded_bucket = 0;
         std::size_t lines_since_last = 0;
@@ -315,15 +295,15 @@ namespace drlog {
         const std::size_t count_threshold = index_count_threshold_;
         std::size_t skipped_lines = 0;
 
-        if (file_info.file_index && !file_info.file_index->time_indexes.empty()) {
+        if (file_info.file_index && file_info.file_index->time_indexes.size() > 1) {
             // start from last indexed offset
             auto &index_entries = file_info.file_index->time_indexes;
             const TimeIndex& last_index = file_info.file_index->time_indexes.back();
             if (last_index.offset < file_size) {
                 ifs.seekg(static_cast<std::streampos>(last_index.offset));
                 // insert existing index entries into entries vector
-                entries.insert(entries.end(), index_entries.begin(), index_entries.end() - 1);
-                last_recorded_bucket = static_cast<std::time_t>(last_index.timestamp);
+                outputs.insert(outputs.end(), index_entries.begin(), index_entries.end() - 1);
+                last_recorded_bucket = static_cast<std::time_t>(outputs.back().timestamp);
             }
         }
         std::streampos last_start_pos;
@@ -333,12 +313,12 @@ namespace drlog {
             if (!std::getline(ifs, line))
             {
                 // add the last index entry
-                if (!entries.empty()) {
+                if (!outputs.empty()) {
                     uint64_t offset = 0;
                     if (last_start_pos!= std::streampos(-1)) offset = static_cast<uint64_t>(last_start_pos);
                     std::time_t bucket = get_timestamp_from_log_line(last_line);
                     if(bucket!=0) {
-                        entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                        outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
                         std::string time_str = util::format_timestamp(bucket);
                         spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
                     }
@@ -349,7 +329,7 @@ namespace drlog {
             if (ts == 0) {
                 // no timestamp -> skip and count
                 ++skipped_lines;
-                if(skipped_lines > 5000 && entries.empty()) {
+                if(skipped_lines > 5000 && outputs.empty()) {
                     spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
                     break;
                 }   
@@ -365,7 +345,7 @@ namespace drlog {
                 // first index entry
                 uint64_t offset = 0;
                 if (start_pos != std::streampos(-1)) offset = static_cast<uint64_t>(start_pos);
-                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
                 last_recorded_bucket = bucket;
                 lines_since_last = 0;
                 std::string time_str = util::format_timestamp(bucket);
@@ -379,7 +359,7 @@ namespace drlog {
                 lines_since_last >= count_threshold) {
                 uint64_t offset = 0;
                 if (start_pos != std::streampos(-1)) offset = static_cast<uint64_t>(start_pos);
-                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
                 last_recorded_bucket = bucket;
                 lines_since_last = 0;
                 // debug: record created
@@ -388,14 +368,11 @@ namespace drlog {
             }
         }
 
-        // apply entries to file_info
-        if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
-        file_info.file_index->time_indexes = std::move(entries);
         double d2 = util::get_micro_timestamp();
-        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
+        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, outputs.size(), skipped_lines,(d2-d1)/1000.0);
     }
 
-    void FileIndexer::update_file_index_txt_mmap(const std::string& path, FileInfo& file_info) {
+    void FileIndexer::update_file_index_txt_mmap(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs) {
         // Open the file using memory-mapped I/O
         double d1 = util::get_micro_timestamp();
         std::ifstream ifs(path, std::ios::binary);
@@ -409,8 +386,7 @@ namespace drlog {
         ifs.seekg(0, std::ios::beg);
         ifs.close();
 
-        std::vector<TimeIndex> entries;
-        entries.reserve(1024);
+        outputs.reserve(1024);
         const int MAX_LINE_SIZE = 16*1024; // maximum line size to prevent excessive carry growth
         std::time_t last_recorded_bucket = 0;
         std::size_t lines_since_last = 0;
@@ -436,15 +412,15 @@ namespace drlog {
         const char* end = data + file_size;
         const char* line_start = data;
         //check for existing index to resume from last offset
-        if (file_info.file_index && !file_info.file_index->time_indexes.empty()) {
+        if (file_info.file_index && file_info.file_index->time_indexes.size() > 1) {
             // start from last indexed offset
             auto &index_entries = file_info.file_index->time_indexes;
-            const TimeIndex& last_index = file_info.file_index->time_indexes.back();
+            const TimeIndex& last_index = index_entries.back();
             if (last_index.offset < file_size) {
                 line_start = data + static_cast<std::ptrdiff_t>(last_index.offset);
                 // insert existing index entries into entries vector
-                entries.insert(entries.end(), index_entries.begin(), index_entries.end() - 1);
-                last_recorded_bucket = static_cast<std::time_t>(last_index.timestamp);
+                outputs.insert(outputs.end(), index_entries.begin(), index_entries.end() - 1);
+                last_recorded_bucket = static_cast<std::time_t>(outputs.back().timestamp);
             }
         }
         std::string_view last_line;
@@ -470,7 +446,7 @@ namespace drlog {
             std::time_t ts = get_timestamp_from_log_line(line);
             if (ts == 0) {
                 ++skipped_lines;
-                if(skipped_lines > 5000 && entries.empty()) {
+                if(skipped_lines > 5000 && outputs.empty()) {
                     spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
                     break;
                 }
@@ -482,7 +458,7 @@ namespace drlog {
             if (last_recorded_bucket == 0 ||
                 bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
                 lines_since_last >= count_threshold) {
-                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
                 lines_since_last = 0;
                 std::string time_str = util::format_timestamp(bucket);
                 if(last_recorded_bucket == 0)
@@ -496,12 +472,12 @@ namespace drlog {
             line_start = line_end + 1;
         }
         // add the last index entry
-        if (!entries.empty() && !last_line.empty()) {
+        if (!outputs.empty() && !last_line.empty()) {
             uint64_t offset = 0;
             if (line_start != data) offset = last_offset;
             std::time_t bucket = get_timestamp_from_log_line(last_line);
             if(bucket!=0) {
-                entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
+                outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), offset});
                 std::string time_str = util::format_timestamp(bucket);
                 spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, bucket, offset, time_str);
             }
@@ -510,15 +486,12 @@ namespace drlog {
         munmap(mapped, file_size);
         close(fd);
 
-        // Apply entries to file_info
-        if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
-        file_info.file_index->time_indexes = std::move(entries);
         double d2 = util::get_micro_timestamp();
-        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
+        spdlog::info("Indexed text file {} entries={} skipped_lines={} time_cost={}", path, outputs.size(), skipped_lines,(d2-d1)/1000.0);
     }
 
     // update file index for gzip file (use zlib gzread) - robust offset handling
-    void FileIndexer::update_file_index_gzip(const std::string& path, FileInfo& file_info) {
+    void FileIndexer::update_file_index_gzip(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs) {
         // parse gzip file and build time index
         double d1 = util::get_micro_timestamp();
         gzFile gz = gzopen(path.c_str(), "rb");
@@ -531,8 +504,7 @@ namespace drlog {
         const int MAX_LINE_SIZE = 16*1024; // maximum line size to prevent excessive carry growth
         std::vector<char> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
-        std::vector<TimeIndex> entries;
-        entries.reserve(1024);
+        outputs.reserve(1024);
 
         uint64_t total_uncompressed = 0; // total uncompressed bytes BEFORE current chunk
         std::time_t last_recorded_bucket = 0;
@@ -555,11 +527,11 @@ namespace drlog {
             }
             if (n == 0) {
                 // end of file,add the last index entry
-                if (!entries.empty()) {
+                if (!outputs.empty()) {
                     uint64_t offset = 0;
                     if (last_offset!= 0) offset = last_offset;
                     last_bucket = get_timestamp_from_log_line(last_line);
-                    entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
+                    outputs.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
                     std::string time_str = util::format_timestamp(last_bucket);
                     spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, offset, time_str);
                 }   
@@ -591,7 +563,7 @@ namespace drlog {
                 if (ts == 0) {
                     // skip lines without timestamp and count them
                     ++skipped_lines;
-                    if(skipped_lines > 5000 && entries.empty()) {
+                    if(skipped_lines > 5000 && outputs.empty()) {
                         spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
                         break;
                     }
@@ -603,7 +575,7 @@ namespace drlog {
                     last_line = line;
 
                     if (last_recorded_bucket == 0) {
-                        entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
+                        outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
                         last_recorded_bucket = bucket;
                         lines_since_last = 0;
                         std::string time_str = util::format_timestamp(bucket);
@@ -613,7 +585,7 @@ namespace drlog {
                         lines_since_last++;
                         if (bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
                             lines_since_last >= count_threshold) {
-                            entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
+                            outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
                             last_recorded_bucket = bucket;
                             lines_since_last = 0;
                             std::string time_str = util::format_timestamp(bucket);
@@ -635,15 +607,12 @@ namespace drlog {
 
         gzclose(gz);
 
-        // apply entries to file_info
-        if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
-        file_info.file_index->time_indexes = std::move(entries);
         double d2 = util::get_micro_timestamp();
-        spdlog::info("Indexed gzip file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
+        spdlog::info("Indexed gzip file {} entries={} skipped_lines={} time_cost={}", path, outputs.size(), skipped_lines,(d2-d1)/1000.0);
         
     }
 
-    void FileIndexer::update_file_index_igzip(const std::string& path, FileInfo& file_info) {
+    void FileIndexer::update_file_index_igzip(const std::string& path, const FileInfo& file_info, std::vector<TimeIndex>& outputs) {
         // parse gzip file and build time index
         double d1 = util::get_micro_timestamp();
         igzip_state igzs;
@@ -658,8 +627,7 @@ namespace drlog {
         std::vector<uint8_t> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
         carry.resize(BUF_SIZE);
-        std::vector<TimeIndex> entries;
-        entries.reserve(1024);
+        outputs.reserve(1024);
 
         uint64_t total_uncompressed = 0; // total uncompressed bytes BEFORE current chunk
         std::time_t last_recorded_bucket = 0;
@@ -680,11 +648,11 @@ namespace drlog {
             }
             if (n == 0) {
                 // end of file,add the last index entry
-                if (!entries.empty()) {
+                if (!outputs.empty()) {
                     uint64_t offset = 0;
                     if (last_offset!= 0) offset = last_offset;
                     last_bucket = get_timestamp_from_log_line(last_line);
-                    entries.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
+                    outputs.push_back(TimeIndex{static_cast<uint64_t>(last_bucket), offset});
                     std::string time_str = util::format_timestamp(last_bucket);
                     spdlog::debug("Last index entry for {}: bucket={} offset={} time={}", path, last_bucket, offset, time_str);
                 }   
@@ -716,7 +684,7 @@ namespace drlog {
                 if (ts == 0) {
                     // skip lines without timestamp and count them
                     ++skipped_lines;
-                    if(skipped_lines > 5000 && entries.empty()) {
+                    if(skipped_lines > 5000 && outputs.empty()) {
                         spdlog::debug("Too many skipped lines without timestamp for {}, give up indexing", path);
                         break;
                     }
@@ -727,7 +695,7 @@ namespace drlog {
                     last_line = line;
 
                     if (last_recorded_bucket == 0) {
-                        entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
+                        outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
                         last_recorded_bucket = bucket;
                         lines_since_last = 0;
                         std::string time_str = util::format_timestamp(bucket);
@@ -737,7 +705,7 @@ namespace drlog {
                         lines_since_last++;
                         if (bucket >= static_cast<std::time_t>(last_recorded_bucket + interval) ||
                             lines_since_last >= count_threshold) {
-                            entries.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
+                            outputs.push_back(TimeIndex{static_cast<uint64_t>(bucket), line_start_offset});
                             last_recorded_bucket = bucket;
                             lines_since_last = 0;
                             std::string time_str = util::format_timestamp(bucket);
@@ -762,11 +730,8 @@ namespace drlog {
 
         igzip::igzclose(&igzs);
 
-        // apply entries to file_info
-        if (!file_info.file_index) file_info.file_index = std::make_shared<FileIndex>();
-        file_info.file_index->time_indexes = std::move(entries);
         double d2 = util::get_micro_timestamp();
-        spdlog::info("Indexed gzip file {} entries={} skipped_lines={} time_cost={}", path, file_info.file_index->time_indexes.size(), skipped_lines,(d2-d1)/1000.0);
+        spdlog::info("Indexed gzip file {} entries={} skipped_lines={} time_cost={}", path, outputs.size(), skipped_lines,(d2-d1)/1000.0);
     }
 
     std::vector<FileInfo> FileIndexer::list_prefix(const std::string& prefix) const {
@@ -775,16 +740,16 @@ namespace drlog {
         for (const auto& [path, info] : index_) {
             // check if prefix matches root path regex
             try {
-                if (!std::regex_match(prefix, info.root_path.prefix_regex)) continue;
+                if (!std::regex_match(prefix, info->root_path->prefix_regex)) continue;
             } catch (const std::regex_error& e) {
-                spdlog::warn("Regex error for path {}: {}", info.root_path.path, e.what());
+                spdlog::warn("Regex error for path {}: {}", info->root_path->path, e.what());
                 continue;
             }
             // check if root starts with prefix
-            if(prefix.find(info.root_path.path) != 0) continue;
+            if(prefix.find(info->root_path->path) != 0) continue;
             // check if path starts with prefix
             if(path.find(prefix) != 0) continue;
-            out.push_back(info);
+            out.push_back(*info);
         }
         return out;
     }
@@ -842,8 +807,8 @@ namespace drlog {
     void FileIndexer::remove_unused_indexes() {
         std::unique_lock<std::shared_mutex> lock(mutex_);
         for (auto it = index_.begin(); it != index_.end(); ) {
-            //remove non-indexed files
-            if (!it->second.file_index || it->second.file_index->time_indexes.empty()) {
+            //skip non-indexed files
+            if (!it->second->file_index || it->second->file_index->time_indexes.empty()) {
                 //spdlog::info("Removing unused index for file: {}", it->first);
                 //it = index_.erase(it);
                 //continue;
@@ -874,7 +839,7 @@ namespace drlog {
             fs::path tmp = target.string() + ".tmp";
 
             // make a snapshot copy of index_ under lock, then release lock
-            std::unordered_map<std::string, FileInfo> snapshot;
+            std::unordered_map<std::string, std::shared_ptr<FileInfo>> snapshot;
             {
                 std::shared_lock<std::shared_mutex> lock(mutex_);
                 snapshot = index_; // copy
@@ -882,7 +847,7 @@ namespace drlog {
 
             json j = json::array();
             for (const auto &kv : snapshot) {
-                const FileInfo &fi = kv.second;
+                const FileInfo &fi = *kv.second;
                 json o;
                 o["fullpath"] = fi.fullpath;
                 o["name"] = fi.name;
@@ -893,7 +858,7 @@ namespace drlog {
                 o["etag"] = fi.etag;
                 o["inode"] = fi.inode;
                 // root path -> only store path string (regex not serializable)
-                o["root_path"] = fi.root_path.path;
+                o["root_path"] = fi.root_path->path;
                 if (fi.file_index) {
                     json idx;
                     idx["index_etag"] = fi.file_index->index_etag;
@@ -957,36 +922,36 @@ namespace drlog {
             }
 
             //make root path to temp map from roots_
-            std::unordered_map<std::string, RootPath> root_paths;
-            for (const auto &rp : roots_) {
-                root_paths.emplace(rp.path, rp);
+            std::unordered_map<std::string, std::shared_ptr<RootPath>> root_paths;
+            for (const auto rp : roots_) {
+                root_paths.emplace(rp->path, rp);
             }
 
             // build temporary map then swap in under lock
-            std::unordered_map<std::string, FileInfo> tmp_index;
+            std::unordered_map<std::string, std::shared_ptr<FileInfo>> tmp_index;
             for (const auto &o : j) {
                 try {
-                    FileInfo fi;
-                    fi.fullpath = o.value("fullpath", std::string());
+                    std::shared_ptr<FileInfo> fi = std::make_shared<FileInfo>();
+                    fi->fullpath = o.value("fullpath", std::string());
                     std::string rp = o.value("root_path", std::string());
                     // set regex from root_paths map
-                    if (root_paths.find(rp) == root_paths.end() || index_.find(fi.fullpath) == index_.end()) {
-                        spdlog::warn("Skipping cache entry with unknown root path or past by filter: {}", fi.fullpath);
+                    if (root_paths.find(rp) == root_paths.end() || index_.find(fi->fullpath) == index_.end()) {
+                        spdlog::warn("Skipping cache entry with unknown root path or past by filter: {}", fi->fullpath);
                         continue;
                     }
-                    fi.root_path = root_paths[rp];
-                    fi.name = o.value("name", std::string());
-                    fi.dir = o.value("dir", std::string());
-                    fi.size = o.value("size", std::uint64_t(0));
-                    fi.mtime = o.value("mtime", std::time_t(0));
-                    fi.file_type = o.value("ftype", std::string());
-                    fi.etag = o.value("etag", std::string());
-                    fi.inode = o.value("inode", uint64_t(0));
+                    fi->root_path = root_paths[rp];
+                    fi->name = o.value("name", std::string());
+                    fi->dir = o.value("dir", std::string());
+                    fi->size = o.value("size", std::uint64_t(0));
+                    fi->mtime = o.value("mtime", std::time_t(0));
+                    fi->file_type = o.value("ftype", std::string());
+                    fi->etag = o.value("etag", std::string());
+                    fi->inode = o.value("inode", uint64_t(0));
         
-                    fi.root_path.path_regex = std::regex(fi.root_path.path_pattern);
-                    fi.root_path.filename_regex = std::regex(fi.root_path.filename_pattern);
-                    fi.root_path.time_format_regex = std::regex(fi.root_path.time_format_pattern);
-                    fi.root_path.prefix_regex = std::regex(fi.root_path.prefix_pattern);
+                    fi->root_path->path_regex = std::regex(fi->root_path->path_pattern);
+                    fi->root_path->filename_regex = std::regex(fi->root_path->filename_pattern);
+                    fi->root_path->time_format_regex = std::regex(fi->root_path->time_format_pattern);
+                    fi->root_path->prefix_regex = std::regex(fi->root_path->prefix_pattern);
                     
                     if (o.contains("file_index")) {
                         const auto &idx = o["file_index"];
@@ -1001,9 +966,9 @@ namespace drlog {
                                 pfi->time_indexes.push_back(ti);
                             }
                         }
-                        fi.file_index = std::move(pfi);
+                        fi->file_index = std::move(pfi);
                     }
-                    if (!fi.fullpath.empty()) tmp_index.emplace(fi.fullpath, std::move(fi));
+                    if (!fi->fullpath.empty()) tmp_index.emplace(fi->fullpath, std::move(fi));
                 } catch (const std::exception &e) {
                     spdlog::warn("Skipping invalid cache entry: {}", e.what());
                 }
@@ -1024,7 +989,7 @@ namespace drlog {
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = index_.find(path);
         if (it != index_.end()) {
-            out_info = it->second;
+            out_info = *it->second;
             return true;
         }
         return false;
