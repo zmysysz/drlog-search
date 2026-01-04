@@ -244,16 +244,20 @@ namespace drlog {
                     gzclose(gz);
                     return;
                 }
+                if(total_uncompressed > ctx->index_start_pos) {
+                    //append the leftover bytes after positioning
+                    uint64_t extra_bytes = total_uncompressed - ctx->index_start_pos;
+                    if (extra_bytes > n) {
+                        spdlog::error("Extra bytes to rewind {} exceed read bytes {}", extra_bytes, n);
+                        ctx->error_msg = "Failed to position to start offset";
+                        ctx->status = 1;
+                        gzclose(gz);
+                        return;
+                    }
+                    carry.append(buffer.data() + (n - extra_bytes), static_cast<size_t>(extra_bytes));
+                }
             }
-            
-            // Ensure we reached the exact start position
-            if (total_uncompressed != ctx->index_start_pos) {
-                ctx->error_msg = "Could not reach exact start position in gzip file";
-                ctx->status = 1;
-                gzclose(gz);
-                return;
-            }
-            
+
             // Read and process file content until end position
             while (total_uncompressed < ctx->index_end_pos) {
                 int n = gzread(gz, buffer.data(), BUF_SIZE);
@@ -395,14 +399,18 @@ namespace drlog {
                     igzip::igzclose(&igzs);
                     return;
                 }
-            }
-            
-            // Ensure we reached the exact start position
-            if (total_uncompressed != ctx->index_start_pos) {
-                ctx->error_msg = "Could not reach exact start position in gzip file";
-                ctx->status = 1;
-                igzip::igzclose(&igzs);
-                return;
+                if(total_uncompressed > ctx->index_start_pos) {
+                    //append the leftover bytes after positioning
+                    uint64_t extra_bytes = total_uncompressed - ctx->index_start_pos;
+                    if (extra_bytes > n) {
+                        spdlog::error("Extra bytes to rewind {} exceed read bytes {}", extra_bytes, n);
+                        ctx->error_msg = "Failed to position to start offset";
+                        ctx->status = 1;
+                        igzip::igzclose(&igzs);
+                        return;
+                    }
+                    carry.append((char *)buffer.data() + (n - extra_bytes), static_cast<size_t>(extra_bytes));
+                }
             }
             
             // Read and process file content until end position
