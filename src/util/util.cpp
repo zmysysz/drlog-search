@@ -181,16 +181,35 @@ namespace drlog {
     }
 
     int util::get_local_utc_offset_seconds() {
-        auto now = std::chrono::system_clock::now();
-        auto local_time = std::chrono::zoned_time<std::chrono::seconds>(
-            std::chrono::current_zone(), 
-            std::chrono::time_point_cast<std::chrono::seconds>(now));
-    
-        auto utc_time = std::chrono::zoned_time<std::chrono::seconds>(
-            "UTC", 
-            std::chrono::time_point_cast<std::chrono::seconds>(now));
+        std::time_t now = std::time(nullptr);
         
-        auto diff = local_time.get_local_time() - utc_time.get_local_time();
-        return static_cast<int>(diff.count());
+        // Get local time structure
+        std::tm tm;
+        
+        #ifdef _WIN32
+            // Windows doesn't have tm_gmtoff
+            localtime_s(&tm, &now);  
+            // Windows alternative: use _timezone variable
+            // _timezone stores the difference in seconds between UTC and local time
+            // Note: _timezone doesn't consider DST
+            long timezone_seconds = 0;
+            _get_timezone(&timezone_seconds);
+            
+            // Adjust for daylight saving time
+            if (tm.tm_isdst > 0) {
+                // DST is in effect, typically subtract 1 hour (3600 seconds)
+                // Note: This depends on the specific timezone
+                timezone_seconds -= 3600;
+            }
+            return static_cast<int>(timezone_seconds);
+            
+        #else
+            // POSIX systems have tm_gmtoff
+            localtime_r(&now, &tm);
+            // tm_gmtoff is the offset in seconds east of UTC
+            // For Beijing (UTC+8), tm_gmtoff should be 28800
+            // For New York (UTC-5/-4), tm_gmtoff should be -18000 or -14400
+            return static_cast<int>(tm.tm_gmtoff);
+        #endif
     }
 } // namespace util
