@@ -20,7 +20,7 @@
 #include "src/util/util.hpp"
 #include <sys/mman.h>
 #include <fcntl.h>
-#include "libs/date.h"
+#include "libs/date/date.h"
 #include "util/igzip.hpp"
 
 namespace drlog {
@@ -626,7 +626,6 @@ namespace drlog {
         const int MAX_LINE_SIZE = 4*1024*1024;
         std::vector<uint8_t> buf(BUF_SIZE);
         std::string carry; // leftover partial line from previous chunk
-        carry.resize(BUF_SIZE);
         outputs.reserve(1024);
 
         uint64_t total_uncompressed = 0; // total uncompressed bytes BEFORE current chunk
@@ -757,7 +756,10 @@ namespace drlog {
     std::time_t FileIndexer::get_timestamp_from_log_line(const std::string &line) {
         std::string prefix = line.substr(0, 50);
         std::smatch matches;
-
+        //time zone
+        static int tz_offset = 0;
+        if (tz_offset == 0) tz_offset = util::get_local_utc_offset_seconds();
+        
         for (const auto& tf : time_formats_) {
             const std::regex& pattern = tf.regex_pattern;
             const std::string& format = tf.format;
@@ -772,7 +774,7 @@ namespace drlog {
                 
                 if (!ss.fail()) {
                     return std::chrono::duration_cast<std::chrono::seconds>(
-                        tp.time_since_epoch()).count();
+                        tp.time_since_epoch()).count() - tz_offset;
                 }
             }
         }
@@ -782,6 +784,9 @@ namespace drlog {
     std::time_t FileIndexer::get_timestamp_from_log_line(const std::string_view &line) {
         std::string prefix(line.substr(0, 50));
         std::smatch matches;
+        //time zone
+        static int tz_offset = 0;
+        if (tz_offset == 0) tz_offset = util::get_local_utc_offset_seconds();
 
         for (const auto& tf : time_formats_) {
             const std::regex& pattern = tf.regex_pattern;
@@ -797,7 +802,7 @@ namespace drlog {
                 
                 if (!ss.fail()) {
                     return std::chrono::duration_cast<std::chrono::seconds>(
-                        tp.time_since_epoch()).count();
+                        tp.time_since_epoch()).count() - tz_offset;
                 }
             }
         }

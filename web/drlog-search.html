@@ -11,6 +11,10 @@
             /* Defines the initial width of the history sidebar */
             --sidebar-width: 200px;
         }
+        /* Reset and Base Styles */
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -18,6 +22,7 @@
             padding: 0;
             background-color: #f4f7f9;
             color: #333;
+            overflow-x: hidden;
         }
 
         header {
@@ -34,6 +39,7 @@
             margin: 0 auto;
             /* Ensure container height fits the viewport */
             min-height: calc(100vh - 80px); 
+            max-width: 100vw;
         }
 
         /* ------------------ Left Sidebar: History (Resizable Width) ------------------ */
@@ -104,6 +110,7 @@
             flex-grow: 1;
             /* Space for the resizer and sidebar */
             margin-left: 12px; 
+            min-width: 0;
         }
 
         /* Query Configuration */
@@ -290,6 +297,7 @@
             padding: 5px;
             border: 1px solid #3c4049;
             border-radius: 4px;
+            max-width: 100%;
         }
 
         .log-header {
@@ -300,10 +308,17 @@
             display: flex;
             align-items: center;
             user-select: none;
+            overflow: hidden;
         }
         
         .log-header:hover {
             background-color: #353940;
+        }
+
+        .log-header-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .toggle-icon {
@@ -324,6 +339,7 @@
             transition: max-height 0.3s ease-in-out;
             white-space: pre-wrap;
             word-break: break-all;
+            white-space: pre-wrap;
         }
         
         /* NEW: Styles for Two-Column Layout (Line Numbers) */
@@ -359,6 +375,7 @@
             flex: 1;
             min-width: 0;
             white-space: pre-wrap;
+            overflow-wrap: anywhere;
             word-break: break-all;
             user-select: text;
         }
@@ -379,6 +396,8 @@
             font-weight: bold;
             margin-bottom: 15px;
             display: block;
+            white-space: pre-wrap; 
+            word-break: break-word;
         }
 
         /* Notification and Loading Overlay Styles */

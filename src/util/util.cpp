@@ -4,6 +4,7 @@
 #include <cstring>
 #include <zlib.h>
 #include <spdlog/spdlog.h>
+#include <chrono>
 
 namespace drlog {
 
@@ -177,5 +178,19 @@ namespace drlog {
         return std::chrono::duration<double, std::micro>(
             std::chrono::system_clock::now().time_since_epoch()
         ).count();
+    }
+
+    int util::get_local_utc_offset_seconds() {
+        auto now = std::chrono::system_clock::now();
+        auto local_time = std::chrono::zoned_time<std::chrono::seconds>(
+            std::chrono::current_zone(), 
+            std::chrono::time_point_cast<std::chrono::seconds>(now));
+    
+        auto utc_time = std::chrono::zoned_time<std::chrono::seconds>(
+            "UTC", 
+            std::chrono::time_point_cast<std::chrono::seconds>(now));
+        
+        auto diff = local_time.get_local_time() - utc_time.get_local_time();
+        return static_cast<int>(diff.count());
     }
 } // namespace util
