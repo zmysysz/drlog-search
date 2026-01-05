@@ -30,13 +30,11 @@ namespace drlog {
     FileIndexer::FileIndexer(unsigned scan_interval_secs)
         : running_(false), scan_interval_seconds_(scan_interval_secs) {
             time_formats_ = {
-                {"%Y-%m-%d %H:%M:%S", std::regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")},
-                {"%Y/%m/%d %H:%M:%S", std::regex(R"(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")},
-                {"%d/%b/%Y:%H:%M:%S", std::regex(R"(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2})")},
-                {"%b %d %H:%M:%S", std::regex(R"([A-Za-z]{3} \d{2} \d{2}:\d{2}:\d{2})")},
-                {"%Y-%m-%dT%H:%M:%S", std::regex(R"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")},
-                {"%Y-%m-%dT%H:%M:%S%z", std::regex(R"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+\-]\d{4})")},
-                {"%a, %d %b %Y %H:%M:%S %Z", std::regex(R"([A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} [A-Za-z]{3})")}
+                {"%Y-%m-%d %H:%M:%S", boost::regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")},
+                {"%Y/%m/%d %H:%M:%S", boost::regex(R"(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})")},
+                {"%Y-%m-%dT%H:%M:%S", boost::regex(R"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")},
+                {"%d/%b/%Y:%H:%M:%S", boost::regex(R"(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2})")},
+                {"%b %d %H:%M:%S", boost::regex(R"([A-Za-z]{3} \d{2} \d{2}:\d{2}:\d{2})")}
             };
             // ensure indexing policy has sane defaults to avoid uninitialized use
             index_interval_seconds_ = 300;
@@ -55,28 +53,28 @@ namespace drlog {
              rp->path = root_path;
              if (!filename_pattern.empty()) {
                 rp->filename_pattern = filename_pattern;
-                try { rp->filename_regex = std::regex(filename_pattern); }
+                try { rp->filename_regex = boost::regex(filename_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad filename pattern '{}': {}", filename_pattern, e.what());
                 }
             }
             if (!time_format_pattern.empty()) {
                 rp->time_format_pattern = time_format_pattern;
-                try { rp->time_format_regex = std::regex(time_format_pattern); }
+                try { rp->time_format_regex = boost::regex(time_format_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad time format pattern '{}': {}", time_format_pattern, e.what());
                 }
             }
             if (!path_pattern.empty()) {
                 rp->path_pattern = path_pattern;
-                try { rp->path_regex = std::regex(path_pattern); }
+                try { rp->path_regex = boost::regex(path_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad path pattern '{}': {}", path_pattern, e.what());
                 }
             }
             if (!prefix_pattern.empty()) {
                 rp->prefix_pattern = prefix_pattern;
-                try { rp->prefix_regex = std::regex(prefix_pattern); }
+                try { rp->prefix_regex = boost::regex(prefix_pattern); }
                 catch (const std::exception& e) {
                     spdlog::warn("Bad prefix pattern '{}': {}", prefix_pattern, e.what());
                 }
@@ -139,7 +137,7 @@ namespace drlog {
     void FileIndexer::scan_root(const std::shared_ptr<RootPath> rp) {
         try {
             const std::string& root = rp->path;
-
+            boost::smatch matches;
             if (!fs::exists(root) || !fs::is_directory(root)) return;
             for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied);
                 it != fs::recursive_directory_iterator(); ++it)
@@ -165,9 +163,9 @@ namespace drlog {
                     std::string filename = p.filename().string();
                     //match path and name pattern
                     try {
-                        if (!rp->path_pattern.empty() && !std::regex_match(p.string(), rp->path_regex)) continue;
-                        if (!rp->filename_pattern.empty() && !std::regex_match(filename, rp->filename_regex)) continue;
-                    } catch (const std::regex_error& e) {
+                        if (!rp->path_pattern.empty() && !boost::regex_match(p.string(), matches, rp->path_regex)) continue;
+                        if (!rp->filename_pattern.empty() && !boost::regex_match(filename, matches, rp->filename_regex)) continue;
+                    } catch (const boost::regex_error& e) {
                         spdlog::warn("Regex error for path {}: {}", rp->path, e.what());
                         continue;
                     }
@@ -435,7 +433,7 @@ namespace drlog {
             uint64_t offset = static_cast<uint64_t>(line_start - data);
             std::string_view line(line_start, line_end - line_start);
             if(line.size() > MAX_LINE_SIZE) {
-                spdlog::debug("Line size exceeded max line size for {}, give up line at offset {}", path, offset);
+                spdlog::debug("Line size exceeded max line size for {}, give up line ", path);
                 line_start = line_end + 1;
                 ++skipped_lines;
                 continue;
@@ -541,9 +539,9 @@ namespace drlog {
             // Append exactly n bytes
             carry.append(buf.data(), static_cast<size_t>(n));
             if(carry.size() > MAX_LINE_SIZE) {
-                spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                spdlog::debug("Line size exceeded max line size for {}, give up line", path);
                 std::string().swap(carry);
-                break;
+                continue;
             }
 
             // compute previous leftover size and base offset for this carry buffer
@@ -661,7 +659,7 @@ namespace drlog {
             // Append exactly n bytes
             carry.append((char *)buf.data(), static_cast<size_t>(n));
             if(carry.size() > MAX_LINE_SIZE) {
-                spdlog::debug("Carry buffer exceeded max line size for {}, give up", path);
+                spdlog::debug("Carry buffer exceeded max line size for {}, give up line", path);
                 std::string().swap(carry);
                 break;
             }
@@ -736,11 +734,12 @@ namespace drlog {
     std::vector<FileInfo> FileIndexer::list_prefix(const std::string& prefix) const {
         std::vector<FileInfo> out;
         std::shared_lock<std::shared_mutex> lock(mutex_);
+        boost::smatch matches;
         for (const auto& [path, info] : index_) {
             // check if prefix matches root path regex
             try {
-                if (!std::regex_match(prefix, info->root_path->prefix_regex)) continue;
-            } catch (const std::regex_error& e) {
+                if (!boost::regex_match(prefix, matches, info->root_path->prefix_regex)) continue;
+            } catch (const boost::regex_error& e) {
                 spdlog::warn("Regex error for path {}: {}", info->root_path->path, e.what());
                 continue;
             }
@@ -755,15 +754,15 @@ namespace drlog {
 
     std::time_t FileIndexer::get_timestamp_from_log_line(const std::string &line) {
         std::string prefix = line.substr(0, 50);
-        std::smatch matches;
+        boost::smatch matches;
         //time zone
         static int tz_offset = 0;
         if (tz_offset == 0) tz_offset = util::get_local_utc_offset_seconds();
         
         for (const auto& tf : time_formats_) {
-            const std::regex& pattern = tf.regex_pattern;
+            const boost::regex& pattern = tf.regex_pattern;
             const std::string& format = tf.format;
-            if(std::regex_search(prefix, matches, pattern) && matches.size() > 0) {
+            if(boost::regex_search(prefix, matches, pattern) && matches.size() > 0) {
                 std::string matched_time = matches[0];
                 
                 // Try to parse the matched time string
@@ -783,15 +782,15 @@ namespace drlog {
 
     std::time_t FileIndexer::get_timestamp_from_log_line(const std::string_view &line) {
         std::string prefix(line.substr(0, 50));
-        std::smatch matches;
+        boost::smatch matches;
         //time zone
         static int tz_offset = 0;
         if (tz_offset == 0) tz_offset = util::get_local_utc_offset_seconds();
 
         for (const auto& tf : time_formats_) {
-            const std::regex& pattern = tf.regex_pattern;
+            const boost::regex& pattern = tf.regex_pattern;
             const std::string& format = tf.format;
-            if(std::regex_search(prefix, matches, pattern) && matches.size() > 0) {
+            if(boost::regex_search(prefix, matches, pattern) && matches.size() > 0) {
                 std::string matched_time = matches[0];
                 
                 // Try to parse the matched time string
@@ -953,10 +952,10 @@ namespace drlog {
                     fi->etag = o.value("etag", std::string());
                     fi->inode = o.value("inode", uint64_t(0));
         
-                    fi->root_path->path_regex = std::regex(fi->root_path->path_pattern);
-                    fi->root_path->filename_regex = std::regex(fi->root_path->filename_pattern);
-                    fi->root_path->time_format_regex = std::regex(fi->root_path->time_format_pattern);
-                    fi->root_path->prefix_regex = std::regex(fi->root_path->prefix_pattern);
+                    fi->root_path->path_regex = boost::regex(fi->root_path->path_pattern);
+                    fi->root_path->filename_regex = boost::regex(fi->root_path->filename_pattern);
+                    fi->root_path->time_format_regex = boost::regex(fi->root_path->time_format_pattern);
+                    fi->root_path->prefix_regex = boost::regex(fi->root_path->prefix_pattern);
                     
                     if (o.contains("file_index")) {
                         const auto &idx = o["file_index"];
