@@ -8,12 +8,13 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <boost/regex.hpp>
 
 namespace drlog {
 
     struct time_format {
         std::string format;  
-        std::regex regex_pattern;
+        boost::regex regex_pattern;
     };
     
     struct RootPath {
@@ -22,10 +23,10 @@ namespace drlog {
         std::string path_pattern;
         std::string filename_pattern;
         std::string time_format_pattern;
-        std::regex prefix_regex;
-        std::regex path_regex;
-        std::regex filename_regex;
-        std::regex time_format_regex;
+        boost::regex prefix_regex;
+        boost::regex path_regex;
+        boost::regex filename_regex;
+        boost::regex time_format_regex;
         int max_days{30};
     };
 
