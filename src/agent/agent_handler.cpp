@@ -70,6 +70,11 @@ namespace drlog {
             res->prepare_payload();
             spdlog::info("Listed {} files under request : {}", results.size(), req->target());
             co_return;
+        } catch ( nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in list handler: {}", e.what());
+            co_return;
         } catch (const std::exception& e) {
             // best-effort 500
             res->result(http::status::internal_server_error);
@@ -153,7 +158,7 @@ namespace drlog {
             searcher.search(search_req,result);
             if (result.status != 0) {
                 res->result(http::status::internal_server_error);
-                spdlog::error("Search failed: {}", result.error_msg);
+                spdlog::error("Search failed: {}, url: {}", result.error_msg, std::string(req->target()));
                 co_return;
             }
             //output
@@ -205,6 +210,11 @@ namespace drlog {
             res->set(http::field::content_type, "application/json");
             res->prepare_payload();
             spdlog::info("Search completed with {} file matches under request : {}", result.matches.size(), req->target());
+            co_return;
+        } catch ( const nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in search handler: {}", e.what());
             co_return;
         } catch (const std::exception& e) {
             // best-effort 500

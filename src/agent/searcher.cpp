@@ -551,7 +551,8 @@ namespace drlog {
         ctx->index_start_pos = time_indexes[start_idx].offset;
         ctx->index_end_time = time_indexes[end_idx].timestamp;
         ctx->index_end_pos = time_indexes[end_idx].offset;
-
+        spdlog::debug("Found index positions for path '{}': start_time={}, start_pos={}, end_time={}, end_pos={}",
+             ctx->path, ctx->index_start_time, ctx->index_start_pos, ctx->index_end_time, ctx->index_end_pos);
         return true;
     }
 
@@ -665,6 +666,7 @@ namespace drlog {
             result.matches.push_back(std::make_shared<FileMatches>(std::move(fm)));
             if(ctx->status != 0)
                 spdlog::warn("Search failed for path '{}': {}", p, ctx->error_msg);
+            spdlog::info("Search completed for path '{}', matched {} lines", p, fm.lines.size());
         }
     }
     bool LogSearcher::timestamp_covers(uint64_t idx_satrt, uint64_t idx_end, uint64_t start_time, uint64_t end_time) {
