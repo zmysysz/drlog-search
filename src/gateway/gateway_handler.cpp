@@ -53,7 +53,13 @@ namespace drlog {
             spdlog::debug("Agent announced: {}", util::url_decode(agent_addr));
             res->result(http::status::ok);
             co_return;
-        } catch (const std::exception& e) {
+        } catch ( const nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in announce handler: {}", e.what());
+            co_return;
+        }
+         catch (const std::exception& e) {
             // best-effort 500
             res->result(http::status::internal_server_error);
             spdlog::error("Internal server error in announce handler: {}", e.what());
@@ -111,6 +117,11 @@ namespace drlog {
             res->prepare_payload();
             co_return;
             
+        } catch ( const nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in web handler: {}", e.what());
+            co_return;
         } catch (const std::exception& e) {
             // best-effort 500
             res->result(http::status::internal_server_error);
@@ -147,6 +158,11 @@ namespace drlog {
             res->set(http::field::content_type, "application/json");
             res->result(http::status::ok);
             res->prepare_payload();
+            co_return;
+        } catch ( const nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in agent_list handler: {}", e.what());
             co_return;
         } catch (const std::exception& e) {
             // best-effort 500
@@ -208,6 +224,11 @@ namespace drlog {
             res->result(http::status::ok);
             res->prepare_payload();
             spdlog::debug("List request served for prefix: {}, url: {}", prefix, std::string(req->target()));
+            co_return;
+        } catch ( nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in list handler: {}", e.what());
             co_return;
         } catch (const std::exception& e) {
             // best-effort 500
@@ -283,8 +304,15 @@ namespace drlog {
             auto &indexes = *p_indexes->get();
             co_await get_agent_log_lists(prefix,agents,indexes,ctx);
             if (indexes.empty()) {
-                res->result(http::status::not_found);
-                spdlog::warn("No files found for prefix: {}, url: {}", prefix, std::string(req->target()));      
+                res->result(http::status::ok);
+                nlohmann::json jres;
+                jres["status"] = 0;
+                jres["error_msg"] = "";
+                jres["records"] = nlohmann::json::array();
+                res->body() = jres.dump();
+                res->set(http::field::content_type, "application/json");
+                res->prepare_payload();
+                spdlog::warn("No log file found for prefix: {}, url: {}, return empty records", prefix, std::string(req->target()));      
                 co_return;
             }
             co_await get_agent_search(prefix,jbody,ctx);
@@ -353,6 +381,11 @@ namespace drlog {
             res->prepare_payload();
             spdlog::info("Search completed with {} file matches under request : {}", jres["records"].size(), req->target());
             co_return;
+        } catch ( nlohmann::json::exception& e) {
+            // best-effort 500
+            res->result(http::status::internal_server_error);
+            spdlog::error("JSON error in search handler: {}", e.what());
+            co_return;
         } catch (const std::exception& e) {
             // best-effort 500
             res->result(http::status::internal_server_error);
@@ -415,10 +448,10 @@ namespace drlog {
             size_t end_index = std::min(start_index + max_tasks_per_coroutine, total_agents);
 
             coroutines.push_back(net::co_spawn(executor,[this, &agents, start_index, end_index, &out_indexes, &out_indexes_mutex, &prefix]() -> net::awaitable<void> {
-                for (size_t j = start_index; j < end_index; ++j) {
+                for (size_t j = start_index; j < end_index; ++j) {             
                     const auto& agent = agents[j];
-                    try {
-                        std::string url = "http://" + agent->address + "/log/list" + "?prefix=" + prefix;
+                    std::string url = "http://" + agent->address + "/log/list" + "?prefix=" + prefix;
+                    try {   
                         bst::http_client_async client;
                         bst::request req;
                         bst::response res;
@@ -445,12 +478,16 @@ namespace drlog {
                                 }
                             }
                         } else {
-                            spdlog::warn("Failed to get log list from agent: {}, status: {}", agent->address, status);
+                            if(status != 404) //ignore 404
+                                spdlog::warn("Failed to get log list from agent: {}, status: {}", url, status);
+                            spdlog::debug("Failed to get log list from agent: {}, status: {}", url, status);
                         }
+                    } catch ( const nlohmann::json::exception& e) {
+                        spdlog::error("JSON error processing agent {}: {}", url, e.what());
                     } catch (const std::exception& e) {
-                        spdlog::error("Error processing agent {}: {}", agent->address, e.what());
+                        spdlog::error("Error processing agent {}: {}", url, e.what());
                     } catch (...) {
-                        spdlog::error("Unknown error processing agent: {}", agent->address);
+                        spdlog::error("Unknown error processing agent: {}", url);
                     }
                 }
                 co_return;
@@ -548,6 +585,8 @@ namespace drlog {
                             std::lock_guard<std::mutex> lock(records_mutex);
                             records[agent_id] = std::move(res_body_c);
                         }
+                    } catch ( const nlohmann::json::exception& e) {
+                        spdlog::error("JSON error processing agent {}: {}", req.url, e.what());
                     } catch (const std::exception& e) {
                         spdlog::error("Error processing agent {}: {}", req.url, e.what());
                     } catch (...) {
