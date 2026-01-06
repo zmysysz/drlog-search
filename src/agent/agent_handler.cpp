@@ -100,6 +100,7 @@ namespace drlog {
             }
             //check path parameter
             auto prefix = util::url_decode(ctx->get_param("prefix"));
+            auto debug_param = ctx->get_param("debug");
             if (prefix.empty()) {
                 res->result(http::status::bad_request);
                 spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
@@ -160,6 +161,16 @@ namespace drlog {
                 res->result(http::status::internal_server_error);
                 spdlog::error("Search failed: {}, url: {}", result.error_msg, std::string(req->target()));
                 co_return;
+            }
+            //if debug == true or 1, print the search result to log
+            if (debug_param == "1" || debug_param == "true") {
+                for (const auto& fm_ptr : result.matches) {
+                    spdlog::info("Search Result - File: {}, Status: {}, Error Msg: {}, Lines Found: {}", 
+                        fm_ptr->path, fm_ptr->status, fm_ptr->error_msg, fm_ptr->lines.size());
+                    for (const auto& logline : fm_ptr->lines) {
+                        spdlog::info("    Time: {}, Line: {}", logline.timestamp, logline.line);
+                    }
+                }
             }
             //output
             //{"status":0,"error_msg":"",
