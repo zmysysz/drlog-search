@@ -442,15 +442,17 @@ namespace drlog {
 
         std::vector<net::awaitable<void>> coroutines;
         std::mutex out_indexes_mutex; // Mutex to protect out_indexes
+        std::string debug_param = ctx->get_param("debug");
 
         for (size_t i = 0; i < num_coroutines; ++i) {
             size_t start_index = i * max_tasks_per_coroutine;
             size_t end_index = std::min(start_index + max_tasks_per_coroutine, total_agents);
 
-            coroutines.push_back(net::co_spawn(executor,[this, &agents, start_index, end_index, &out_indexes, &out_indexes_mutex, &prefix]() -> net::awaitable<void> {
+            coroutines.push_back(net::co_spawn(executor,[this, &agents, start_index, end_index, &out_indexes, &out_indexes_mutex, &prefix, &debug_param]() -> net::awaitable<void> {
                 for (size_t j = start_index; j < end_index; ++j) {             
                     const auto& agent = agents[j];
                     std::string url = "http://" + agent->address + "/log/list" + "?prefix=" + prefix;
+                    if(debug_param != "") url += "&debug=" + debug_param;
                     try {   
                         bst::http_client_async client;
                         bst::request req;
@@ -536,12 +538,13 @@ namespace drlog {
         auto executor = co_await net::this_coro::executor;
         std::vector<net::awaitable<void>> coroutines;
         std::mutex records_mutex; // Mutex to protect records
+        std::string debug_param = ctx->get_param("debug");
 
         for (size_t i = 0; i < num_coroutines; ++i) {
             size_t start_index = i * max_tasks_per_coroutine;
             size_t end_index = std::min(start_index + max_tasks_per_coroutine, total_agents);
 
-            coroutines.push_back(net::co_spawn(executor,[this, &agent_map, &agent_indexes, &jreq_body, start_index, end_index, &records, &records_mutex, &prefix]() -> net::awaitable<void> {
+            coroutines.push_back(net::co_spawn(executor,[this, &agent_map, &agent_indexes, &jreq_body, start_index, end_index, &records, &records_mutex, &prefix, &debug_param]() -> net::awaitable<void> {
                 for (size_t j = start_index; j < end_index; ++j) {
                     const auto& agent_index = agent_indexes[j];
                     if(agent_index.empty()) {
@@ -551,8 +554,9 @@ namespace drlog {
                     const std::string &addr = agent_map[agent_id]->address;
                     bst::request req;
                     bst::response res;
+                    std::string url = "http://" + addr + "/log/search" + "?prefix=" + prefix;
+                    if(debug_param != "") url += "&debug=" + debug_param;
                     try {
-                        std::string url = "http://" + addr + "/log/search" + "?prefix=" + prefix;
                         bst::http_client_async client;
                         req.url = url;
                         client.set_request_timeout(10);
