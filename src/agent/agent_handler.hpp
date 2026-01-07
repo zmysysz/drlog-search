@@ -36,6 +36,8 @@ namespace drlog {
     private:
         void compress_body(const std::string& input,const std::string& accept_encoding, 
             std::string& output,std::string& content_encoding);
+
+         std::string ensure_utf8(const std::string& s);
     private:
         std::shared_ptr<FileIndexer> indexer_;
     };
