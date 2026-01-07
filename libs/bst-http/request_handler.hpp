@@ -83,7 +83,7 @@ namespace bst {
         std::string get_path() { 
             return path;
         }
-        std::string get_prifix_path() {
+        std::string get_prefix_path() {
             return prefix_path;
         }
         bool get_param(const std::string &key,std::string &value) {

@@ -306,19 +306,6 @@ namespace drlog {
                     result += '?';
                 }
             }
-            else if ((c & 0xF8) == 0xF0) {
-                if (i + 3 < s.size() && 
-                    (static_cast<unsigned char>(s[i+1]) & 0xC0) == 0x80 &&
-                    (static_cast<unsigned char>(s[i+2]) & 0xC0) == 0x80 &&
-                    (static_cast<unsigned char>(s[i+3]) & 0xC0) == 0x80) {
-                    result += s[i];
-                    result += s[++i];
-                    result += s[++i];
-                    result += s[++i];
-                } else {
-                    result += '?';
-                }
-            }
             // 5. others
             else {
                 result += '?';

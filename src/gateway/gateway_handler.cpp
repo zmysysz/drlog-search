@@ -84,7 +84,7 @@ namespace drlog {
             }
             //load html file from path
             std::string path = ctx->get_path();
-            std::string prefix_path = ctx->get_prifix_path();
+            std::string prefix_path = ctx->get_prefix_path();
             std::string web_file("");
             std::string file_type;
             if(path.size() > prefix_path.size())
