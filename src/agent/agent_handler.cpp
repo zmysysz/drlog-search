@@ -193,7 +193,7 @@ namespace drlog {
                 jfm["lines"] = nlohmann::json::array();
                 for (const auto& logline : fm_ptr->lines) {
                     nlohmann::json jline;
-                    jline["line"] = logline.line;
+                    jline["line"] = ensure_utf8(logline.line);
                     jline["time"] = logline.timestamp;
                     jfm["lines"].push_back(jline);
                 }
@@ -201,7 +201,7 @@ namespace drlog {
                 jfm["end_time"] = fm_ptr->lines.back().timestamp;
                 jres["records"].push_back(jfm);
             }
-            std::string res_body_j = jres.dump();
+            std::string res_body_j = jres.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
             //gzip compress if needed
             std::string res_body_c;
             std::string content_encoding;
@@ -258,6 +258,73 @@ namespace drlog {
                 return;
             }
         }
+    }
+
+    std::string AgentHandler::ensure_utf8(const std::string& s) {
+        std::string result;
+        result.reserve(s.size());
+
+        for (size_t i = 0; i < s.size(); ++i) {
+            unsigned char c = static_cast<unsigned char>(s[i]);
+
+            // 1. single byte: 0xxxxxxx
+            if (c < 0x80) {
+                result += s[i];
+            }
+            // 2. two bytes: 110xxxxx 10xxxxxx
+            else if ((c & 0xE0) == 0xC0) {
+                if (i + 1 < s.size() && (static_cast<unsigned char>(s[i+1]) & 0xC0) == 0x80) {
+                    result += s[i];
+                    result += s[++i];
+                } else {
+                    result += '?';
+                }
+            }
+            // 3. three bytes: 1110xxxx 10xxxxxx 10xxxxxx
+            else if ((c & 0xF0) == 0xE0) {
+                if (i + 2 < s.size() && 
+                    (static_cast<unsigned char>(s[i+1]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(s[i+2]) & 0xC0) == 0x80) {
+                    result += s[i];
+                    result += s[++i];
+                    result += s[++i];
+                } else {
+                    result += '?';
+                }
+            }
+            // 4. four bytes: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+            else if ((c & 0xF8) == 0xF0) {
+                if (i + 3 < s.size() && 
+                    (static_cast<unsigned char>(s[i+1]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(s[i+2]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(s[i+3]) & 0xC0) == 0x80) {
+                    result += s[i];
+                    result += s[++i];
+                    result += s[++i];
+                    result += s[++i];
+                } else {
+                    result += '?';
+                }
+            }
+            else if ((c & 0xF8) == 0xF0) {
+                if (i + 3 < s.size() && 
+                    (static_cast<unsigned char>(s[i+1]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(s[i+2]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(s[i+3]) & 0xC0) == 0x80) {
+                    result += s[i];
+                    result += s[++i];
+                    result += s[++i];
+                    result += s[++i];
+                } else {
+                    result += '?';
+                }
+            }
+            // 5. others
+            else {
+                result += '?';
+            }
+        }
+        return result;
     }
     
 } // namespace drlog
