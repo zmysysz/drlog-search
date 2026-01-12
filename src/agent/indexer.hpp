@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <shared_mutex>
 #include <regex>
+#include <ctime>
+#include <string_view>
 #include <thread>
 #include <atomic>
 #include <cstdint>
@@ -13,10 +15,10 @@
 namespace drlog {
 
     struct time_format {
-        std::string format;  
+        std::string format;
         boost::regex regex_pattern;
     };
-    
+
     struct RootPath {
         std::string path;
         std::string prefix_pattern;
@@ -61,7 +63,7 @@ namespace drlog {
         ~FileIndexer();
 
         // add a root path and filename regex
-        void add_root(const std::string& root_path, const std::string& filename_pattern, 
+        void add_root(const std::string& root_path, const std::string& filename_pattern,
             const std::string& time_format_pattern, const std::string& path_pattern, const std::string& prefix_pattern, int max_days = 30);
         void init_indexes();
         // background scanner control
@@ -75,7 +77,7 @@ namespace drlog {
         void set_index_interval_seconds(unsigned seconds) { index_interval_seconds_ = seconds; }
         // set count threshold to force index creation after N lines
         void set_index_count_threshold(std::size_t count) { index_count_threshold_ = count; }
-        void set_scan_interval_seconds(unsigned seconds) { scan_interval_seconds_ = seconds; }  
+        void set_scan_interval_seconds(unsigned seconds) { scan_interval_seconds_ = seconds; }
         void set_cache_path(const std::string& path) { cache_path_ = path; }
         bool get_file_index_by_path(const std::string& path, FileInfo& out_info) const;
         std::time_t get_timestamp_from_log_line(const std::string &line);
