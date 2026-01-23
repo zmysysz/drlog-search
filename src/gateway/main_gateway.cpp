@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     auto logger = spdlog::daily_logger_mt("daily_logger",log_path.append("/server.log"), 0, 0, false, 7);
     spdlog::set_default_logger(logger);
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-    
+
     if (log_level == "debug") {
         spdlog::set_level(spdlog::level::debug);
     } else if (log_level == "warn") {
@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
 
     std::shared_ptr<drlog::AgentManager> agent_manager = std::make_shared<drlog::AgentManager>();
     agent_manager->run_cleanup_task();
-  
+
     // Initialize the HTTP server
     bst::http_server server;
     server.init(address, port, threads);
@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<drlog::GTHandler> handler = std::make_shared<drlog::GTHandler>(agent_manager);
     handler->set_web_path(web_path);
     bst::request_handler::register_route("/hello", std::bind(&drlog::GTHandler::hello, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    bst::request_handler::register_route("/log/list", std::bind(&drlog::GTHandler::list, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)); 
+    bst::request_handler::register_route("/log/list", std::bind(&drlog::GTHandler::list, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     bst::request_handler::register_route("/log/search", std::bind(&drlog::GTHandler::search, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     bst::request_handler::register_route("/agent/announce", std::bind(&drlog::GTHandler::announce, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     bst::request_handler::register_route("/agent/list", std::bind(&drlog::GTHandler::agent_list, handler, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
@@ -81,8 +81,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Port: " << port << std::endl;
     std::cout << "Threads: " << threads << std::endl;
     std::cout << "******************************************" << std::endl;
-    
+
     server.run_server();
-    
+
     return 0;
 }

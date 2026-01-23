@@ -18,7 +18,7 @@ namespace drlog {
 
     GTHandler::GTHandler(std::shared_ptr<AgentManager> agent_manager)
         : agent_manager_(agent_manager) {
-    }   
+    }
 
     GTHandler::~GTHandler() {}
 
@@ -39,13 +39,13 @@ namespace drlog {
         try {
             if (req->method() != http::verb::get) {
                 res->result(http::status::method_not_allowed);
-                spdlog::warn("Method not allowed, only GET is allowed, url: {}",   std::string(req->target()));      
+                spdlog::warn("Method not allowed, only GET is allowed, url: {}",   std::string(req->target()));
                 co_return;
             }
             auto agent_addr = ctx->get_param("agent_addr");
             if (agent_addr.empty()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Path parameter agent_addr is required, url: {}", std::string(req->target()));      
+                spdlog::warn("Path parameter agent_addr is required, url: {}", std::string(req->target()));
                 co_return;
             }
             // url decode use boost::asio
@@ -69,7 +69,7 @@ namespace drlog {
             res->result(http::status::internal_server_error);
             spdlog::error("Unknown internal server error in announce handler");
             co_return;
-            
+
         }
     }
 
@@ -79,7 +79,7 @@ namespace drlog {
         try {
             if (req->method() != http::verb::get) {
                 res->result(http::status::method_not_allowed);
-                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));      
+                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));
                 co_return;
             }
             //load html file from path
@@ -94,7 +94,7 @@ namespace drlog {
                auto prefix = util::url_decode(ctx->get_param("prefix"));
                 if (prefix.empty()) {
                     res->result(http::status::bad_request);
-                    spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
+                    spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));
                     co_return;
                 }
                 web_file = web_path_ + "drlog-search.html";
@@ -116,7 +116,7 @@ namespace drlog {
             res->result(http::status::ok);
             res->prepare_payload();
             co_return;
-            
+
         } catch ( const nlohmann::json::exception& e) {
             // best-effort 500
             res->result(http::status::internal_server_error);
@@ -141,7 +141,7 @@ namespace drlog {
         try {
             if (req->method() != http::verb::get) {
                 res->result(http::status::method_not_allowed);
-                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));      
+                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));
                 co_return;
             }
             std::vector<std::shared_ptr<agent_info>> agents = agent_manager_->get_active_agents();
@@ -183,20 +183,20 @@ namespace drlog {
         try {
             if (req->method() != http::verb::get) {
                 res->result(http::status::method_not_allowed);
-                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));      
+                spdlog::warn("Method not allowed, only GET is allowed, url: {}", std::string(req->target()));
                 co_return;
             }
 
             auto prefix = util::url_decode(ctx->get_param("prefix"));
             if (prefix.empty()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
+                spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));
                 co_return;
             }
             std::vector<std::shared_ptr<agent_info>> agents = agent_manager_->get_active_agents();
             if (agents.empty()) {
                 res->result(http::status::service_unavailable);
-                spdlog::warn("No active agents available to serve the request, url: {}", std::string(req->target()));      
+                spdlog::warn("No active agents available to serve the request, url: {}", std::string(req->target()));
                 co_return;
             }
             // json body
@@ -205,7 +205,7 @@ namespace drlog {
             co_await get_agent_log_lists(prefix,agents,out_indexes,ctx);
             if (out_indexes.empty()) {
                 res->result(http::status::not_found);
-                spdlog::warn("No files found for prefix: {}, url: {}", prefix, std::string(req->target()));      
+                spdlog::warn("No files found for prefix: {}, url: {}", prefix, std::string(req->target()));
                 co_return;
             }
             for (const auto& fi : out_indexes) {
@@ -249,14 +249,14 @@ namespace drlog {
         try {
             if (req->method() != http::verb::post) {
                 res->result(http::status::method_not_allowed);
-                spdlog::warn("Method not allowed, only POST is allowed, url: {}", std::string(req->target()));      
+                spdlog::warn("Method not allowed, only POST is allowed, url: {}", std::string(req->target()));
                 co_return;
             }
             //check path parameter
             auto prefix = util::url_decode(ctx->get_param("prefix"));
             if (prefix.empty()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));      
+                spdlog::warn("Path parameter is required, url: {}", std::string(req->target()));
                 co_return;
             }
             //load from post body json
@@ -270,22 +270,22 @@ namespace drlog {
             nlohmann::json jbody = nlohmann::json::parse(body, nullptr, false);
             if (jbody.is_discarded()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));      
+                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));
                 co_return;
             }
             if(!jbody.contains("querys") || !jbody["querys"].is_array()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));      
+                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));
                 co_return;
             }
             if(!jbody.contains("start_time") || !jbody["start_time"].is_number()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));      
+                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));
                 co_return;
             }
             if(!jbody.contains("end_time") || !jbody["end_time"].is_number()) {
                 res->result(http::status::bad_request);
-                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));      
+                spdlog::warn("Invalid JSON format in request body, url: {}", std::string(req->target()));
                 co_return;
             }
             //get agent list
@@ -295,7 +295,7 @@ namespace drlog {
             auto &agents = *p_agents.get();
             if (agents.empty()) {
                 res->result(http::status::service_unavailable);
-                spdlog::warn("No active agents available to serve the request, url: {}", std::string(req->target()));      
+                spdlog::warn("No active agents available to serve the request, url: {}", std::string(req->target()));
                 co_return;
             }
             //get agent log list
@@ -303,6 +303,16 @@ namespace drlog {
             auto p_indexes = ctx->get<std::shared_ptr<std::vector<agent_file_index>>>("indexes");
             auto &indexes = *p_indexes->get();
             co_await get_agent_log_lists(prefix,agents,indexes,ctx);
+            //filter the start and end time from agetn log list
+            uint64_t req_start_time = jbody["start_time"].get<uint64_t>();
+            uint64_t req_end_time = jbody["end_time"].get<uint64_t>();
+
+            auto filtered_end = std::remove_if(indexes.begin(), indexes.end(),
+                [req_start_time, req_end_time](const agent_file_index& index) {
+                    return index.end_time < req_start_time || index.start_time > req_end_time;
+                });
+            indexes.erase(filtered_end, indexes.end());
+
             if (indexes.empty()) {
                 res->result(http::status::ok);
                 nlohmann::json jres;
@@ -312,9 +322,10 @@ namespace drlog {
                 res->body() = jres.dump();
                 res->set(http::field::content_type, "application/json");
                 res->prepare_payload();
-                spdlog::warn("No log file found for prefix: {}, url: {}, return empty records", prefix, std::string(req->target()));      
+                spdlog::warn("No log file found for prefix: {}, url: {}, return empty records", prefix, std::string(req->target()));
                 co_return;
             }
+
             co_await get_agent_search(prefix,jbody,ctx);
             //get results
             auto p_agent_records = ctx->get<std::shared_ptr<std::map<std::string,std::string>>>("agent_records");
@@ -400,7 +411,7 @@ namespace drlog {
         }
     }
 
-    void GTHandler::compress_body(const std::string& input,const std::string& accept_encoding, 
+    void GTHandler::compress_body(const std::string& input,const std::string& accept_encoding,
             std::string& output,std::string& content_encoding) {
         if(input.size() < 1024) {
             content_encoding = "";
@@ -419,7 +430,7 @@ namespace drlog {
         }
     }
 
-    void GTHandler::decompress_body(const std::string& input,const std::string& content_encoding, 
+    void GTHandler::decompress_body(const std::string& input,const std::string& content_encoding,
             std::string& output) {
         if(content_encoding.find("gzip") != std::string::npos) {
             //gzip decompress
@@ -449,11 +460,11 @@ namespace drlog {
             size_t end_index = std::min(start_index + max_tasks_per_coroutine, total_agents);
 
             coroutines.push_back(net::co_spawn(executor,[this, &agents, start_index, end_index, &out_indexes, &out_indexes_mutex, &prefix, &debug_param]() -> net::awaitable<void> {
-                for (size_t j = start_index; j < end_index; ++j) {             
+                for (size_t j = start_index; j < end_index; ++j) {
                     const auto& agent = agents[j];
                     std::string url = "http://" + agent->address + "/log/list" + "?prefix=" + prefix;
                     if(debug_param != "") url += "&debug=" + debug_param;
-                    try {   
+                    try {
                         bst::http_client_async client;
                         bst::request req;
                         bst::response res;
@@ -527,7 +538,7 @@ namespace drlog {
         for (const auto& agent : agents) {
             agent_map[agent->agent_id] = agent;
         }
-        
+
         ctx->set("agent_records", std::make_shared<std::map<std::string, std::string>>());  // agent_id -> record json str
         auto p_records = ctx->get<std::shared_ptr<std::map<std::string, std::string>>>("agent_records");
         auto &records = *p_records->get();
@@ -594,7 +605,7 @@ namespace drlog {
                     } catch (const std::exception& e) {
                         spdlog::error("Error processing agent {}: {}", req.url, e.what());
                     } catch (...) {
-                        spdlog::error("Unknown error processing agent: {}", req.url);   
+                        spdlog::error("Unknown error processing agent: {}", req.url);
                     }
                 }
                 co_return;
@@ -606,5 +617,5 @@ namespace drlog {
         }
         co_return;
     }
-    
+
 } // namespace drlog
