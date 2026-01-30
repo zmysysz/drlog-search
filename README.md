@@ -18,13 +18,24 @@ A high-performance distributed log search system designed for scalable log index
 
 ## Overview
 
-**drlog-search** is a distributed log search solution that enables centralized log analysis across multiple servers. The system consists of a gateway server that coordinates search requests and multiple agent servers that index and search log files on their local filesystems.
+**drlog-search** (Distributed Raw Log Search) is a lightweight, high-performance distributed log search solution designed for scenarios where traditional log collection systems are impractical or unnecessary. The name "drlog" emphasizes its focus on searching raw log files directly on distributed servers without requiring centralized log aggregation infrastructure.
+
+### Why drlog-search?
+
+**drlog-search** is ideal for:
+
+- **Environments without log collection infrastructure**: Servers or services where deploying ELK, Splunk, or similar centralized logging systems is too complex, costly, or unnecessary
+- **AI Agent Integration**: Provides a simple, efficient log retrieval tool that can be easily wrapped as an MCP (Model Context Protocol) server, enabling AI agents and LLMs to query distributed logs seamlessly
+- **Lightweight deployments**: Minimal resource footprint with no need for data pipelines, message queues, or centralized storage
+- **Direct raw log access**: Search logs in their original format and location without transformation or ingestion delays
+- **Quick troubleshooting**: Rapidly search across multiple servers without waiting for log shipping or indexing pipelines
 
 ### Key Components
 
 - **Gateway Server**: Central coordinator managing agent registration and distributing search requests
-- **Agent Servers**: Distributed workers indexing and searching log files locally
+- **Agent Servers**: Distributed workers indexing and searching raw log files locally on their filesystems
 - **Web Interface**: Browser-based search UI with advanced query capabilities
+- **MCP-Ready Architecture**: Simple HTTP API design that can be easily wrapped as an MCP tool for AI agent integration
 
 ## Features
 
@@ -117,7 +128,7 @@ A high-performance distributed log search system designed for scalable log index
 
 ### Runtime Requirements
 
-- Linux or Windows operating system
+- Linux operating system (Windows is not currently supported)
 - Network connectivity between gateway and agents
 - Sufficient disk space for log indexing
 
@@ -144,24 +155,6 @@ make -j$(nproc)
 # - drlog-agent
 ```
 
-### Windows
-
-```bash
-# Create build directory
-mkdir build
-cd build
-
-# Configure with CMake
-cmake ..
-
-# Build (Release configuration)
-cmake --build . --config Release
-
-# Executables will be in build/bin/Release/
-# - drlog-gateway.exe
-# - drlog-agent.exe
-```
-
 ### Build Options
 
 ```bash
@@ -174,6 +167,8 @@ cmake -DCMAKE_INSTALL_PREFIX=/opt/drlog ..
 # Verbose build
 make VERBOSE=1
 ```
+
+**Note**: Windows builds are not currently supported. The project focuses on Linux server environments where distributed log search is most commonly needed.
 
 ## Configuration
 
